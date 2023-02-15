@@ -2,7 +2,7 @@ import { createStore } from 'vuex'
 
 import { FileSystemDriver } from './FileSystemDriver'
 
-import { fnRandomString } from './lib'
+import { fnSaveFile, fnRandomString } from './lib'
 
 // NOTE: Константы
 export const DATABASE_PATH = "passwords-database"
@@ -178,6 +178,12 @@ export default createStore({
         }
     },
     actions: {
+        fnExportDatabase({ commit, state, dispatch, getters }) {
+            fnSaveFile('passwords-database', JSON.stringify(state.oDatabase, null, 4))
+        },
+        fnImportDatabase({ commit, state, dispatch, getters }, sData) {
+            commit('fnUpdateDatabase', JSON.parse(sData))
+        },
         fnPrepareRepo({ commit, state, dispatch, getters }) {
             commit('fnHideRepoWindow')
             FileSystemDriver.fnInit(getters.oCurrentRepo)

@@ -2,6 +2,7 @@
   <div class="wrapper">
     <div class="left-panel">
       <button v-for="(oMenuItem, iI) in aMenu" :key="iI" class="btn" @click="fnClickLeftMenu(oMenuItem)" :title="oMenuItem.title"><i :class="'bi '+oMenuItem.icon"></i></button>
+      <button class="btn btn-import" title="Импортировать"><i class="bi bi-box-arrow-in-up"></i><label><input type="file" ref="file_selector" @change="fnFileImportChange" /></label></button>
     </div>
     <div class="table-panel">
       <div class="table">
@@ -104,6 +105,8 @@ export default {
         { id: "add", title: "Добавить", icon: "bi-plus-lg" },
         { id: "edit", title: "Редактировать", icon: "bi-pencil" },
         { id: "remove", title: "Удалить", icon: "bi-trash" },
+        // { id: "import", title: "Импортировать", icon: "bi-box-arrow-in-up" },
+        { id: "export", title: "Экспортировать", icon: "bi-box-arrow-down" },
       ],
       oSelectedItem: null,
       sTableName: 'table'
@@ -112,7 +115,7 @@ export default {
 
   methods: {
     ...mapMutations(a`fnLoadRepos fnShowEditWindow fnRemoveFromTable`),
-    ...mapActions(a`fnSaveDatabase`),
+    ...mapActions(a`fnSaveDatabase fnExportDatabase fnImportDatabase`),
     fnFilterInput(oE, sK) {
       this.$store.commit('fnUpdateFilter', { sTableName: this.sTableName, sName: sK, sV:oE.target.value })
     },
@@ -131,6 +134,9 @@ export default {
       }
       if (oItem.id == "remove") {
         this.fnRemoveClick()
+      }
+      if (oItem.id == "export") {
+        this.fnExport()
       }
     },
     fnItemClick(oRow) {
@@ -156,6 +162,27 @@ export default {
     fnSaveAll() {
       this.fnSaveDatabase()
       this.bShowSaveToast = true
+    },
+    fnExport() {
+      this.fnExportDatabase()
+    },
+    fnImport() {
+      let oFile = this.$refs.file_selector.files[0];
+      let reader = new FileReader();
+      var oThis = this
+
+      reader.readAsText(oFile);
+
+      reader.onload = function() {
+        oThis.fnImportDatabase(reader.result)
+      };
+
+      reader.onerror = function() {
+        console.error(reader.error);
+      };
+    },
+    fnFileImportChange() {
+      this.fnImport()
     },
   },
   created() {
