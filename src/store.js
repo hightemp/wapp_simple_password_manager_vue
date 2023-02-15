@@ -5,7 +5,7 @@ import { FileSystemDriver } from './FileSystemDriver'
 import { fnRandomString } from './lib'
 
 // NOTE: Константы
-export const DATABASE_PATH = "passwords_database"
+export const DATABASE_PATH = "passwords-database"
 export const DATABASE_UPDATE_TIMEOUT = 30000
 
 // Create a new store instance.
@@ -56,15 +56,6 @@ export default createStore({
                 table: {
                     last_index: 100,
                     data: [
-                        // ...Array(100).fill({}).map((oI, iI) => ({
-                        //     id: iI+1,
-                        //     category: "Категория "+iI,
-                        //     name: "Название "+iI,
-                        //     login: "Логин "+iI,
-                        //     password: "fdsgfsdgfsdgfsgwe5gdnbgdfhgdsgtrwestvrwet4q3tqgrwer43q2rgrdsgfsdgfsgf",
-                        //     url: "https://stackoverflow.com/questions/46210109/how-do-i-call-a-getter-from-another-getter-in-vuex",
-                        //     description: "According to ".repeat(Math.round(Math.random()*20)),
-                        // }))
                     ],
                     selection_id: null,
                     filter: {
@@ -106,6 +97,9 @@ export default createStore({
         },
         fnUpdateVar(state, { sName, sV }) {
             state[sName] = sV
+            if (sName=="sPassword") {
+                localStorage.setItem('sPassword', sV)
+            }
         },
         fnUpdateFilter(state, { sTableName, sName, sV }) {
             state.oDatabase[sTableName].filter[sName] = sV
@@ -133,6 +127,7 @@ export default createStore({
         fnLoadRepos(state) {
             try { 
                 state.aReposList = JSON.parse(localStorage.getItem('aReposList') || '[]')
+                state.sPassword = (localStorage.getItem('sPassword') || "")
             } catch(_) {
 
             }
@@ -212,6 +207,7 @@ export default createStore({
                     if ((oE+"").match(/Malformed UTF-8 data/)) {
                         alert("Не правильный пароль");
                         commit('fnShowRepoWindow')
+                        return
                     }
                     if ((oE+"").match(/Cannot destructure property/)
                         || (oE+"").match(/Not Found/)) {
@@ -224,7 +220,9 @@ export default createStore({
                                         commit('fnHideLoader')
                                     })
                             })
+                        return
                     }
+                    commit('fnShowRepoWindow')
                 })
         },
         fnDropDatabase({ commit, state }) {
