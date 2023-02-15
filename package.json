@@ -7,7 +7,14 @@
     "build": "vue-cli-service build"
   },
   "dependencies": {
-    "vue": "^3.2.13"
+    "@octokit/rest": "^19.0.7",
+    "bootstrap": "^5.2.3",
+    "bootstrap-icons": "^1.10.3",
+    "crypto-js": "^4.1.1",
+    "js-base64": "^3.7.5",
+    "vue": "^3.2.13",
+    "vuex": "^4.1.0",
+    "webdav": "^4.11.2"
   },
   "devDependencies": {
     "@vue/cli-service": "~5.0.0"
