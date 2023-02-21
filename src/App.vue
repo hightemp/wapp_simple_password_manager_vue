@@ -23,12 +23,19 @@
                   :class="'table-row '+(oSelectedItem && oSelectedItem.id == oRow.id ? 'active' : '')" 
                   :style="sHeaderStyles" 
                   @click="(oE) => fnItemClick(oRow)"
+                  @dblclick="(oE) => fnDblItemClick(oRow)"
               >
                   <div v-for="(oSF, sK) in oStruct" :key="sK" class="cell">
                     <template v-if="oRow[sK] && sK=='url'">
                       <a :href="oRow[sK]">{{oRow[sK]}}</a>
                     </template>
                     <template v-else>
+                      <template v-if="oRow[sK] && (sK=='password' || sK=='login')">
+                        <button 
+                          class="btn btn-light copy-to-clipboard"
+                          @click="fnCopyToClipboard(oRow[sK])"
+                        ><i class="bi bi-clipboard-check"></i></button>
+                      </template>
                       {{oRow[sK]}}
                     </template>
                   </div>
@@ -122,6 +129,9 @@ export default {
   methods: {
     ...mapMutations(a`fnLoadRepos fnShowEditWindow fnRemoveFromTable`),
     ...mapActions(a`fnSaveDatabase fnExportDatabase fnImportDatabase`),
+    fnCopyToClipboard(sText) {
+      navigator.clipboard.writeText(sText);
+    },
     fnFilterInput(oE, sK) {
       this.$store.commit('fnUpdateFilter', { sTableName: this.sTableName, sName: sK, sV:oE.target.value })
     },
@@ -146,7 +156,10 @@ export default {
       }
     },
     fnItemClick(oRow) {
-        this.oSelectedItem = oRow
+      this.oSelectedItem = oRow
+    },
+    fnDblItemClick(oRow) {
+      this.fnShowEditWindow({ sFormName: this.sTableName, oItem: this.oSelectedItem })
     },
     fnAddClick() {
         this.fnShowEditWindow({ sFormName: this.sTableName, oItem: {} })

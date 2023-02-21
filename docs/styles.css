@@ -148,6 +148,7 @@ body, html {
     border-right: 1px solid #eee;
     border-bottom: 1px solid #eee;
     word-break: break-all;
+    position: relative;
 }
 .cell.header {
     background: #eee;
@@ -182,4 +183,26 @@ body, html {
     background: red;
     border-radius: 3px !important;
     margin-left: -10px;
+}
+
+
+.copy-to-clipboard {
+    background: #ddd !important;
+    color: #000 !important;
+    position: absolute;
+    right: 0px;
+    top: 0px;
+    width: 26px;
+    height: 26px;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+}
+
+.copy-to-clipboard * {
+    color: #000 !important;
+}
+
+.table-row .cell:hover .copy-to-clipboard {
+    display: block;
 }
