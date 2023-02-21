@@ -85,6 +85,8 @@ export default createStore({
                 }
             },
 
+            iUnsavedChanges: 0,
+
             sMode: "tasks",
         }
     },
@@ -97,9 +99,9 @@ export default createStore({
         },
         fnUpdateVar(state, { sName, sV }) {
             state[sName] = sV
-            if (sName=="sPassword") {
-                localStorage.setItem('sPassword', sV)
-            }
+            // if (sName=="sPassword") {
+            //     localStorage.setItem('sPassword', sV)
+            // }
         },
         fnUpdateFilter(state, { sTableName, sName, sV }) {
             state.oDatabase[sTableName].filter[sName] = sV
@@ -127,7 +129,7 @@ export default createStore({
         fnLoadRepos(state) {
             try { 
                 state.aReposList = JSON.parse(localStorage.getItem('aReposList') || '[]')
-                state.sPassword = (localStorage.getItem('sPassword') || "")
+                // state.sPassword = (localStorage.getItem('sPassword') || "")
             } catch(_) {
 
             }
@@ -172,9 +174,11 @@ export default createStore({
                 state.oEditWindow[sFormName].edit_item.id = ++state.oDatabase[sTableName][`last_index`]
                 state.oDatabase[sTableName][`data`].push(state.oEditWindow[sFormName].edit_item)
             }
+            state.iUnsavedChanges++;
         },
         fnRemoveFromTable(state, { sTableName, oItem }) {
             state.oDatabase[sTableName][`data`] = state.oDatabase[sTableName][`data`].filter((oI) => oI.id != oItem.id)
+            state.iUnsavedChanges++;
         }
     },
     actions: {
@@ -191,10 +195,16 @@ export default createStore({
         },
         fnSaveDatabase({ commit, state }) {
             return FileSystemDriver.fnWriteFileCryptoJSON(DATABASE_PATH, state.oDatabase, state.sPassword)
+                .then(() => {
+                    state.iUnsavedChanges = 0;
+                })
                 .catch(() => {
                     FileSystemDriver.fnReadFile(DATABASE_PATH)
                         .then(() => {
                             return FileSystemDriver.fnWriteFileCryptoJSON(DATABASE_PATH, state.oDatabase, state.sPassword)
+                                .then(() => {
+                                    state.iUnsavedChanges = 0;
+                                })
                         })
                 })
         },

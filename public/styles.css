@@ -131,7 +131,7 @@ body, html {
     top: 0px;
 }
 .table-row.active {
-    background: blue;
+    background: lightskyblue;
     color: white;
 }
 .table-row.active * {
@@ -170,4 +170,16 @@ body, html {
 
 .btn-import input {
     display: none;
+}
+
+
+.btn-menu {
+    position: relative;
+}
+
+.btn-menu .badge {
+    position: absolute !important;
+    background: red;
+    border-radius: 3px !important;
+    margin-left: -10px;
 }

@@ -1,7 +1,12 @@
 <template>
   <div class="wrapper">
     <div class="left-panel">
-      <button v-for="(oMenuItem, iI) in aMenu" :key="iI" class="btn" @click="fnClickLeftMenu(oMenuItem)" :title="oMenuItem.title"><i :class="'bi '+oMenuItem.icon"></i></button>
+      <button v-for="(oMenuItem, iI) in aMenu" :key="iI" class="btn btn-menu" @click="fnClickLeftMenu(oMenuItem)" :title="oMenuItem.title">
+        <i :class="'bi '+oMenuItem.icon"></i>
+        <template v-if="oMenuItem.id=='save' && iUnsavedChanges">
+          <span class="badge">{{iUnsavedChanges}}</span>
+        </template>
+      </button>
       <button class="btn btn-import" title="Импортировать"><i class="bi bi-box-arrow-in-up"></i><label><input type="file" ref="file_selector" @change="fnFileImportChange" /></label></button>
     </div>
     <div class="table-panel">
@@ -61,6 +66,7 @@ export default {
 
   computed: {
     ...cc(`bShowRepoWindow bShowSaveToast sPassword`),
+    ...mapState(a`iUnsavedChanges`),
     sHeaderStyles() {
       return {display:'grid', 'grid-template-columns': '1fr '.repeat(this.iStructLength) }
     },
