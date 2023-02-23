@@ -5,5 +5,6 @@ import { createApp } from 'vue'
 import App from './App.vue'
 
 import oStore from './store'
+import './registerServiceWorker'
 
 createApp(App).use(oStore).mount('#app')
