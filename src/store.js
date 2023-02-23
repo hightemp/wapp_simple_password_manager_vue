@@ -17,6 +17,7 @@ export default createStore({
                 { type:"localstorage", name: "Локальное хранилище" }
             ],
             aReposList: [],
+            oReposFileSystem: { },
             iSelectedRepoIndex: null,
 
             bShowLoader: false,
@@ -54,7 +55,8 @@ export default createStore({
             },
             oDatabase: {
                 table: {
-                    last_index: 100,
+                    last_index: 0,
+                    page: 1,
                     data: [
                     ],
                     selection_id: null,
@@ -203,7 +205,17 @@ export default createStore({
         fnRemoveFromTable(state, { sTableName, oItem }) {
             state.oDatabase[sTableName][`data`] = state.oDatabase[sTableName][`data`].filter((oI) => oI.id != oItem.id)
             state.iUnsavedChanges++;
-        }
+        },
+        fnCreateFileSystem(state, { iIndex }) {
+            var aRepos = state.aDefaultRepoList.concat(state.aReposList)
+            console.log(aRepos[iIndex])
+            state.oReposFileSystem[iIndex] = new FileSystemDriver(aRepos[iIndex])
+        },
+        fnSetNeedSaveToCurrentRepo(state) {
+            var aRepos = state.aDefaultRepoList.concat(state.aReposList)
+            aRepos[state.iSelectedRepoIndex].need_save = true
+            console.log(aRepos[state.iSelectedRepoIndex])
+        },
     },
     actions: {
         fnExportDatabase({ commit, state, dispatch, getters }) {
@@ -214,27 +226,42 @@ export default createStore({
         },
         fnPrepareRepo({ commit, state, dispatch, getters }) {
             commit('fnHideRepoWindow')
-            FileSystemDriver.fnInit(getters.oCurrentRepo)
+            commit('fnCreateFileSystem', { iIndex: state.iSelectedRepoIndex })
+            commit('fnSetNeedSaveToCurrentRepo')
             dispatch('fnLoadDatabase')
         },
-        fnSaveDatabase({ commit, state }) {
-            return FileSystemDriver.fnWriteFileCryptoJSON(DATABASE_PATH, state.oDatabase, state.sPassword)
+        fnSaveToAllDatabase({ commit, state, getters, dispatch }) {
+            for (var iIndex in getters.aReposList) {
+                var oRepo = getters.aReposList[iIndex]
+                if (oRepo.need_save) {
+                    if (!state.oReposFileSystem[iIndex]) {
+                        commit('fnCreateFileSystem', { iIndex: iIndex })
+                    }
+                    dispatch('fnSaveDatabase', { oFileSystem: state.oReposFileSystem[iIndex] });
+                }
+            }
+        },
+        fnSaveCurrentDatabase({ commit, state, getters, dispatch }) {
+            dispatch('fnSaveDatabase', { oFileSystem: getters.oCurrentFileSystem });
+        },
+        fnSaveDatabase({ commit, state }, { oFileSystem }) {
+            return oFileSystem.fnWriteFileCryptoJSON(DATABASE_PATH, state.oDatabase, state.sPassword)
                 .then(() => {
                     state.iUnsavedChanges = 0;
                 })
                 .catch(() => {
-                    FileSystemDriver.fnReadFile(DATABASE_PATH)
+                    oFileSystem.fnReadFile(DATABASE_PATH)
                         .then(() => {
-                            return FileSystemDriver.fnWriteFileCryptoJSON(DATABASE_PATH, state.oDatabase, state.sPassword)
+                            return oFileSystem.fnWriteFileCryptoJSON(DATABASE_PATH, state.oDatabase, state.sPassword)
                                 .then(() => {
                                     state.iUnsavedChanges = 0;
                                 })
                         })
                 })
         },
-        fnLoadDatabase({ commit, state }) {
+        fnLoadDatabase({ commit, state, getters }) {
             commit('fnShowLoader')
-            FileSystemDriver
+            getters.oCurrentFileSystem
                 .fnReadFileCryptoJSON(DATABASE_PATH, state.sPassword)
                 .then((mData) => {
                     if (!mData) throw "Cannot destructure property"
@@ -251,9 +278,9 @@ export default createStore({
                     }
                     if ((oE+"").match(/Cannot destructure property/)
                         || (oE+"").match(/Not Found/)) {
-                        FileSystemDriver.fnWriteFileCryptoJSON(DATABASE_PATH, state.oDatabase, state.sPassword)
+                        getters.oCurrentFileSystem.fnWriteFileCryptoJSON(DATABASE_PATH, state.oDatabase, state.sPassword)
                             .then(() => {
-                                FileSystemDriver
+                                getters.oCurrentFileSystem
                                     .fnReadFileCryptoJSON(DATABASE_PATH, state.sPassword)
                                     .then((mData) => { 
                                         commit('fnUpdateDatabase', mData)
@@ -281,6 +308,9 @@ export default createStore({
         },
         oCurrentRepo(state, getters) {
             return getters.aReposList[state.iSelectedRepoIndex]
+        },
+        oCurrentFileSystem(state, getters) {
+            return state.oReposFileSystem[state.iSelectedRepoIndex]
         },
 
         fnFilterGroups: (state) => (sFilter) => {

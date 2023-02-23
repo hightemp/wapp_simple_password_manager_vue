@@ -2,6 +2,15 @@
   <div class="wrapper">
     <div class="left-panel">
       <button v-for="(oMenuItem, iI) in aMenu" :key="iI" class="btn btn-menu" @click="fnClickLeftMenu(oMenuItem)" :title="oMenuItem.title">
+        <template v-if="oMenuItem.id=='save'">
+          <div class="repos-list">
+            <template v-for="oRepo in aReposList" :key="oRepo">
+              <div class="repo-list_item">
+                <label><input type="checkbox" v-model="oRepo.need_save" />{{ oRepo.name }}</label>
+              </div>
+            </template>
+          </div>
+        </template>
         <i :class="'bi '+oMenuItem.icon"></i>
         <template v-if="oMenuItem.id=='save' && iUnsavedChanges">
           <span class="badge">{{iUnsavedChanges}}</span>
@@ -10,6 +19,20 @@
       <button class="btn btn-import" title="Импортировать"><i class="bi bi-box-arrow-in-up"></i><label><input type="file" ref="file_selector" @change="fnFileImportChange" /></label></button>
     </div>
     <div class="table-panel">
+      <div class="table-actions-panel">
+        <div class="spacer"></div>
+        <button class="btn btn-light" @click="fnFirst"><i class="bi bi-chevron-bar-left"></i></button>
+        <button class="btn btn-light" @click="fnPrevShift"><i class="bi bi-chevron-double-left"></i></button>
+        <button class="btn btn-light" @click="fnPrev"><i class="bi bi-chevron-compact-left"></i></button>
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" v-model="iPage" />
+            <span class="input-group-text" id="basic-addon1">/ {{iMaxPages}}</span>
+        </div>
+        <button class="btn btn-light" @click="fnNext"><i class="bi bi-chevron-compact-right"></i></button>
+        <button class="btn btn-light" @click="fnNextShift"><i class="bi bi-chevron-double-right"></i></button>
+        <button class="btn btn-light" @click="fnLast"><i class="bi bi-chevron-bar-right"></i></button>
+        <div class="spacer"></div>
+      </div>
       <div class="table">
           <div class="table-row header" :style="sHeaderStyles">
               <div v-for="(oSF, sK) in oStruct" :key="sK" class="cell header">
@@ -18,7 +41,7 @@
               </div>
           </div>
           <!-- {{aRows}} -->
-          <template v-for="oRow in aRows" :key="oRow">
+          <template v-for="oRow in aSlicedRows" :key="oRow">
               <div 
                   :class="'table-row '+(oSelectedItem && oSelectedItem.id == oRow.id ? 'active' : '')" 
                   :style="sHeaderStyles" 
@@ -73,6 +96,7 @@ export default {
 
   computed: {
     ...cc(`bShowRepoWindow bShowSaveToast sPassword`),
+    ...mapGetters(a`aReposList`),
     ...mapState(a`iUnsavedChanges`),
     sHeaderStyles() {
       return {display:'grid', 'grid-template-columns': '1fr '.repeat(this.iStructLength) }
@@ -88,6 +112,13 @@ export default {
     },
     iMaxPages() {
         return Math.ceil(this.aRows.length / this.iPageCount)
+    },
+    iPage: {
+      get() { return this.$store.state.oDatabase['table'].page ?? 1 },
+      set(sV) { this.$store.state.oDatabase['table'].page = sV*1 },
+    },
+    iPageCount() {
+      return Math.floor((window.innerHeight - 60 - 30) / 27)
     },
     aRows() {
         var aRows = this.oTable.data.filter((oI) => {
@@ -105,7 +136,7 @@ export default {
         return aRows;
     },
     aSlicedRows() {
-        var aRows = this.aRows.slice((this.sPage-1)*this.iPageCount, this.sPage*this.iPageCount)
+        var aRows = this.aRows.slice((this.iPage-1)*this.iPageCount, this.iPage*this.iPageCount)
         return aRows;
     },
   },
@@ -128,7 +159,7 @@ export default {
 
   methods: {
     ...mapMutations(a`fnLoadRepos fnShowEditWindow fnRemoveFromTable`),
-    ...mapActions(a`fnSaveDatabase fnExportDatabase fnImportDatabase`),
+    ...mapActions(a`fnSaveToAllDatabase fnSaveDatabase fnExportDatabase fnImportDatabase`),
     fnFirst() {
         this.iPage = 1
     },
@@ -205,7 +236,8 @@ export default {
         }
     },
     fnSaveAll() {
-      this.fnSaveDatabase()
+      // this.fnSaveDatabase()
+      this.fnSaveToAllDatabase()
       this.bShowSaveToast = true
     },
     fnExport() {
