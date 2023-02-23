@@ -151,6 +151,11 @@ body, html {
     border-bottom: 1px solid #eee;
     word-break: break-all;
     position: relative;
+
+    word-break: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .cell.header {
     background: #eee;
