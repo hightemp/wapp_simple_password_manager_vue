@@ -129,6 +129,32 @@ export default {
   methods: {
     ...mapMutations(a`fnLoadRepos fnShowEditWindow fnRemoveFromTable`),
     ...mapActions(a`fnSaveDatabase fnExportDatabase fnImportDatabase`),
+    fnFirst() {
+        this.iPage = 1
+    },
+    fnPrevShift() {
+        if (this.iPage>5) {
+            this.iPage-=5
+        }
+    },
+    fnPrev() {
+        if (this.iPage>1) {
+            this.iPage-=1
+        }
+    },
+    fnLast() {
+        this.iPage = this.iMaxPages
+    },
+    fnNextShift() {
+        if (this.iPage<this.iMaxPages-5) {
+            this.iPage+=5
+        }
+    },
+    fnNext() {
+        if (this.iPage<this.iMaxPages) {
+            this.iPage+=1
+        }
+    },
     fnCopyToClipboard(sText) {
       navigator.clipboard.writeText(sText);
     },
