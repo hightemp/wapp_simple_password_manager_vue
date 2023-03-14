@@ -115,6 +115,12 @@ export default createStore({
         },
         fnReposSelect(state, iIndex) {
             state.iSelectedRepoIndex = iIndex
+            var aRepos = state.aDefaultRepoList.concat(state.aReposList)
+            for (var oRepo of aRepos) {
+                oRepo.need_save = false
+            }
+            aRepos[0].need_save = true
+            aRepos[state.iSelectedRepoIndex].need_save = true
         },
         fnReposClean(state) {
             state.aReposList = []

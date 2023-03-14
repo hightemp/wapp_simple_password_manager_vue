@@ -89,6 +89,12 @@
                                         <div><b>username:</b> {{oItem.username}}</div>
                                         <div><b>password:</b> {{oItem.password}}</div>
                                     </template>
+                                    <div class="need-save">
+                                        <label>
+                                            <input type="checkbox" v-model="oItem.need_save">
+                                            Нужно сохранять
+                                        </label>
+                                    </div>
                                 </div>
                                 <div style="display:flex;align-items:start">
                                         <template v-if="oItem.type!='localstorage'">

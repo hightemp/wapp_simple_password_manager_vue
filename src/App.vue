@@ -2,15 +2,6 @@
   <div class="wrapper">
     <div class="left-panel">
       <button v-for="(oMenuItem, iI) in aMenu" :key="iI" class="btn btn-menu" @click="fnClickLeftMenu(oMenuItem)" :title="oMenuItem.title">
-        <template v-if="oMenuItem.id=='save'">
-          <div class="repos-list">
-            <template v-for="oRepo in aReposList" :key="oRepo">
-              <div class="repo-list_item">
-                <label><input type="checkbox" v-model="oRepo.need_save" />{{ oRepo.name }}</label>
-              </div>
-            </template>
-          </div>
-        </template>
         <i :class="'bi '+oMenuItem.icon"></i>
         <template v-if="oMenuItem.id=='save' && iUnsavedChanges">
           <span class="badge">{{iUnsavedChanges}}</span>
