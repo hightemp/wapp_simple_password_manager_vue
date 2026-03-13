@@ -28,7 +28,7 @@
         <button class="btn btn-light" @click="fnLast"><i class="bi bi-chevron-bar-right"></i></button>
         <div class="spacer"></div>
       </div>
-      <div class="table">
+      <div class="data-table">
           <div class="table-row header" :style="sHeaderStyles">
               <div v-for="(oSF, sK) in oStruct" :key="sK" class="cell header">
                   {{oSF.label}}
