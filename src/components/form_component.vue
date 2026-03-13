@@ -130,25 +130,17 @@
     </template>
 </template>
 
-<script>
-export default {
-    props: ['item', 'value'],
-    emits: ['input'],
+<script setup lang="ts">
+import { computed } from 'vue'
 
-    computed: {
-        oItem() {
-            return this.item
-        },
-        mValue: {
-            get() {
-                return this.value
-            },
-            set(mV) {
-                this.$emit('input', mV)
-            }
-        }
-    }
-}
+const props = defineProps(['item', 'value'])
+const emit = defineEmits(['input'])
+
+const oItem = computed(() => props.item)
+const mValue = computed({
+  get: () => props.value,
+  set: (mV) => emit('input', mV),
+})
 </script>
 
 <style>

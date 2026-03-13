@@ -3,8 +3,8 @@
     <div class="left-panel">
       <button v-for="(oMenuItem, iI) in aMenu" :key="iI" class="btn btn-menu" @click="fnClickLeftMenu(oMenuItem)" :title="oMenuItem.title">
         <i :class="'bi '+oMenuItem.icon"></i>
-        <template v-if="oMenuItem.id=='save' && iUnsavedChanges">
-          <span class="badge">{{iUnsavedChanges}}</span>
+        <template v-if="oMenuItem.id=='save' && db.iUnsavedChanges">
+          <span class="badge">{{db.iUnsavedChanges}}</span>
         </template>
       </button>
       <button class="btn btn-import" title="Импортировать"><i class="bi bi-box-arrow-in-up"></i><label><input type="file" ref="file_selector" @change="fnFileImportChange" /></label></button>
@@ -35,13 +35,12 @@
                   <input type="text" class="form-control" @input="(oE) => fnFilterInput(oE, sK)" :value="oTable.filter[sK]"  />
               </div>
           </div>
-          <!-- {{aRows}} -->
           <template v-for="oRow in aSlicedRows" :key="oRow">
               <div 
                   :class="'table-row '+(oSelectedItem && oSelectedItem.id == oRow.id ? 'active' : '')" 
                   :style="sHeaderStyles" 
-                  @click="(oE) => fnItemClick(oRow)"
-                  @dblclick="(oE) => fnDblItemClick(oRow)"
+                  @click="() => fnItemClick(oRow)"
+                  @dblclick="() => fnDblItemClick(oRow)"
               >
                   <div v-for="(oSF, sK) in oStruct" :key="sK" class="cell">
                     <template v-if="oRow[sK] && sK=='url'">
@@ -69,256 +68,196 @@
     </div>
   </div>
 
-  <edit_window title="Редактирование" :form_name="sTableName" :table_name="sTableName" />
-  <repo_window />
-  <saved_toast />
-  <loader/>
+  <EditWindow title="Редактирование" :form_name="sTableName" :table_name="sTableName" />
+  <RepoWindow />
+  <SavedToast />
+  <LoaderOverlay />
 </template>
 
-<script>
+<script setup lang="ts">
+import { ref, computed, onMounted, useTemplateRef } from 'vue'
+import { useDatabaseStore } from './stores/database'
+import { useReposStore } from './stores/repos'
+import { fnDebounce } from './lib'
 
-import { mapMutations, mapState, mapActions, mapGetters } from 'vuex'
-import { a, cc, fnDebounce } from "./lib"
+import EditWindow from './components/edit_window.vue'
+import RepoWindow from './components/repo_window.vue'
+import SavedToast from './components/saved_toast.vue'
+import LoaderOverlay from './components/loader.vue'
 
-import edit_window from "./components/edit_window.vue"
-import repo_window from "./components/repo_window.vue"
-import saved_toast from "./components/saved_toast.vue"
-import loader from './components/loader.vue'
+const db = useDatabaseStore()
+const repos = useReposStore()
 
-export default {
-  name: 'App',
+const file_selector = useTemplateRef('file_selector')
 
-  components: {
-    edit_window,
-    repo_window,
-    saved_toast,
-    loader,
-  },
+// --- local state ---
+const aMenu = [
+  { id: 'repo-window', title: 'Выбрать репозиторий', icon: 'bi-person-fill' },
+  { id: 'save', title: 'Сохранить', icon: 'bi-arrow-up-square' },
+  { id: 'add', title: 'Добавить', icon: 'bi-plus-lg' },
+  { id: 'edit', title: 'Редактировать', icon: 'bi-pencil' },
+  { id: 'remove', title: 'Удалить', icon: 'bi-trash' },
+  { id: 'export', title: 'Экспортировать', icon: 'bi-box-arrow-down' },
+]
 
-  computed: {
-    ...cc(`bShowRepoWindow bShowSaveToast sPassword`),
-    ...mapGetters(a`aReposList`),
-    ...mapState(a`iUnsavedChanges`),
-    sHeaderStyles() {
-      return {display:'grid', 'grid-template-columns': '1fr '.repeat(this.iStructLength) }
-    },
-    iStructLength() {
-        return Object.keys(this.oStruct).length
-    },
-    oStruct() {
-        return this.$store.state.oStructure['table']
-    },
-    oTable() {
-        return this.$store.state.oDatabase['table']
-    },
-    iMaxPages() {
-        return Math.ceil(this.aRows.length / this.iPageCount)
-    },
-    iPage: {
-      get() { return this.$store.state.oDatabase['table'].page ?? 1 },
-      set(sV) { this.$store.state.oDatabase['table'].page = sV*1 },
-    },
-    iPageCount() {
-      return Math.floor((window.innerHeight - 60 - 30) / 27)
-    },
-    aRows() {
-        var aRows = this.oTable.data.filter((oI) => {
-            var bResult = true;
-            for (var sK in this.oTable.filter) {
-                if (this.oTable.filter[sK]) {
-                    bResult = bResult && ~oI[sK].indexOf(this.oTable.filter[sK])
-                }
-            }
-            return bResult
-        })
+const oSelectedItem = ref(null)
+const sTableName = 'table'
+const bDarkTheme = ref(localStorage.getItem('bDarkTheme') === 'true')
+let iAutoLockTimer = null
+const iAutoLockTimeout = 5 * 60 * 1000
 
-        return aRows;
-    },
-    aSlicedRows() {
-        var aRows = this.aRows.slice((this.iPage-1)*this.iPageCount, this.iPage*this.iPageCount)
-        return aRows;
-    },
-  },
+// --- computed ---
+const oStruct = computed(() => db.oStructure.table)
+const oTable = computed(() => db.oDatabase.table)
+const iStructLength = computed(() => Object.keys(oStruct.value).length)
+const sHeaderStyles = computed(() => ({
+  display: 'grid',
+  'grid-template-columns': '1fr '.repeat(iStructLength.value),
+}))
 
-  data() {
-    return {
-      aMenu: [
-        { id: "repo-window", title: "Выбрать репозиторий", icon: "bi-person-fill" },
-        { id: "save", title: "Сохранить", icon: "bi-arrow-up-square" },
-        { id: "add", title: "Добавить", icon: "bi-plus-lg" },
-        { id: "edit", title: "Редактировать", icon: "bi-pencil" },
-        { id: "remove", title: "Удалить", icon: "bi-trash" },
-        // { id: "import", title: "Импортировать", icon: "bi-box-arrow-in-up" },
-        { id: "export", title: "Экспортировать", icon: "bi-box-arrow-down" },
-      ],
-      oSelectedItem: null,
-      sTableName: 'table',
-      bDarkTheme: localStorage.getItem('bDarkTheme') === 'true',
-      iAutoLockTimer: null,
-      iAutoLockTimeout: 5 * 60 * 1000, // 5 minutes
+const iPageCount = computed(() => Math.floor((window.innerHeight - 60 - 30) / 27))
+
+const iPage = computed({
+  get: () => db.oDatabase.table.page ?? 1,
+  set: (sV) => { db.oDatabase.table.page = sV * 1 },
+})
+
+const aRows = computed(() => {
+  return oTable.value.data.filter((oI) => {
+    let bResult = true
+    for (const sK in oTable.value.filter) {
+      if (oTable.value.filter[sK]) {
+        bResult = bResult && ~oI[sK].indexOf(oTable.value.filter[sK])
+      }
     }
-  },
+    return bResult
+  })
+})
 
-  methods: {
-    ...mapMutations(a`fnLoadRepos fnShowEditWindow fnRemoveFromTable`),
-    ...mapActions(a`fnSaveToAllDatabase fnSaveDatabase fnExportDatabase fnImportDatabase`),
-    fnFirst() {
-        this.iPage = 1
-    },
-    fnPrevShift() {
-        if (this.iPage>5) {
-            this.iPage-=5
-        }
-    },
-    fnPrev() {
-        if (this.iPage>1) {
-            this.iPage-=1
-        }
-    },
-    fnLast() {
-        this.iPage = this.iMaxPages
-    },
-    fnNextShift() {
-        if (this.iPage<this.iMaxPages-5) {
-            this.iPage+=5
-        }
-    },
-    fnNext() {
-        if (this.iPage<this.iMaxPages) {
-            this.iPage+=1
-        }
-    },
-    fnCopyToClipboard(sText) {
-      navigator.clipboard.writeText(sText);
-    },
-    fnFilterInput: fnDebounce(function(oE, sK) {
-      this.$store.commit('fnUpdateFilter', { sTableName: this.sTableName, sName: sK, sV:oE.target.value })
-    }, 300),
-    fnClickLeftMenu(oItem) {
-      if (oItem.id == "repo-window") {
-        this.bShowRepoWindow = true
-      }
-      if (oItem.id == "save") {
-        this.fnSaveAll()
-      }
-      if (oItem.id == "add") {
-        this.fnAddClick()
-      }
-      if (oItem.id == "edit") {
-        this.fnEditClick()
-      }
-      if (oItem.id == "remove") {
-        this.fnRemoveClick()
-      }
-      if (oItem.id == "export") {
-        this.fnExport()
-      }
-    },
-    fnItemClick(oRow) {
-      this.oSelectedItem = oRow
-    },
-    fnDblItemClick(oRow) {
-      this.fnShowEditWindow({ sFormName: this.sTableName, oItem: this.oSelectedItem })
-    },
-    fnAddClick() {
-        this.fnShowEditWindow({ sFormName: this.sTableName, oItem: {} })
-    },
-    fnEditClick() {
-        if (this.oSelectedItem) {
-            this.fnShowEditWindow({ sFormName: this.sTableName, oItem: this.oSelectedItem })
-        } else {
-            alert("Нужно выбрать")
-        }
-    },
-    fnRemoveClick() {
-        if (this.oSelectedItem) {
-            if (confirm('Вы уверены что хотите удалить эту запись?')) {
-                this.fnRemoveFromTable({ sTableName: this.sTableName, oItem: this.oSelectedItem })
-                this.oSelectedItem = null
-            }
-        } else {
-            alert("Нужно выбрать")
-        }
-    },
-    fnSaveAll() {
-      // this.fnSaveDatabase()
-      this.fnSaveToAllDatabase()
-      this.bShowSaveToast = true
-    },
-    fnExport() {
-      this.fnExportDatabase()
-    },
-    fnImport() {
-      let oFile = this.$refs.file_selector.files[0];
-      let reader = new FileReader();
-      var oThis = this
+const iMaxPages = computed(() => Math.ceil(aRows.value.length / iPageCount.value))
 
-      reader.readAsText(oFile);
+const aSlicedRows = computed(() =>
+  aRows.value.slice((iPage.value - 1) * iPageCount.value, iPage.value * iPageCount.value)
+)
 
-      reader.onload = function() {
-        oThis.fnImportDatabase(reader.result)
-      };
+// --- methods ---
+function fnFirst() { iPage.value = 1 }
+function fnPrevShift() { if (iPage.value > 5) iPage.value -= 5 }
+function fnPrev() { if (iPage.value > 1) iPage.value -= 1 }
+function fnLast() { iPage.value = iMaxPages.value }
+function fnNextShift() { if (iPage.value < iMaxPages.value - 5) iPage.value += 5 }
+function fnNext() { if (iPage.value < iMaxPages.value) iPage.value += 1 }
 
-      reader.onerror = function() {
-        console.error(reader.error);
-      };
-    },
-    fnFileImportChange() {
-      this.fnImport()
-    },
-    fnToggleMask(oE) {
-      const oMasked = oE.target
-      const oReal = oMasked.nextElementSibling
-      if (oReal && oReal.style.display === 'none') {
-        oReal.style.display = ''
-        oMasked.style.display = 'none'
-      }
-      // Auto-hide after 3 seconds
-      setTimeout(() => {
-        oReal.style.display = 'none'
-        oMasked.style.display = ''
-      }, 3000)
-    },
-    fnToggleTheme() {
-      this.bDarkTheme = !this.bDarkTheme
-      localStorage.setItem('bDarkTheme', this.bDarkTheme)
-      document.documentElement.setAttribute('data-theme', this.bDarkTheme ? 'dark' : 'light')
-    },
-    fnResetAutoLock() {
-      clearTimeout(this.iAutoLockTimer)
-      this.iAutoLockTimer = setTimeout(() => {
-        if (this.sPassword) {
-          this.sPassword = ''
-          this.bShowRepoWindow = true
-        }
-      }, this.iAutoLockTimeout)
-    },
-  },
-  created() {
-    var oThis = this;
+function fnCopyToClipboard(sText) {
+  navigator.clipboard.writeText(sText)
+}
 
-    this.fnLoadRepos()
+const fnFilterInput = fnDebounce((oE, sK) => {
+  db.fnUpdateFilter({ sTableName, sName: sK, sV: oE.target.value })
+}, 300)
 
-    // Apply saved theme
-    if (this.bDarkTheme) {
-      document.documentElement.setAttribute('data-theme', 'dark')
-    }
+function fnClickLeftMenu(oItem) {
+  if (oItem.id == 'repo-window') db.bShowRepoWindow = true
+  if (oItem.id == 'save') fnSaveAll()
+  if (oItem.id == 'add') fnAddClick()
+  if (oItem.id == 'edit') fnEditClick()
+  if (oItem.id == 'remove') fnRemoveClick()
+  if (oItem.id == 'export') db.fnExportDatabase()
+}
 
-    document.addEventListener('keydown', e => {
-      if (e.ctrlKey && e.keyCode === 83) {
-          e.preventDefault();
-          oThis.fnSaveAll()
-      }
-    });
+function fnItemClick(oRow) { oSelectedItem.value = oRow }
 
-    // Auto-lock: reset timer on user activity
-    const fnActivity = () => this.fnResetAutoLock()
-    document.addEventListener('mousemove', fnActivity)
-    document.addEventListener('keydown', fnActivity)
-    document.addEventListener('click', fnActivity)
-    this.fnResetAutoLock()
+function fnDblItemClick() {
+  db.fnShowEditWindow({ sFormName: sTableName, oItem: oSelectedItem.value })
+}
+
+function fnAddClick() {
+  db.fnShowEditWindow({ sFormName: sTableName, oItem: {} })
+}
+
+function fnEditClick() {
+  if (oSelectedItem.value) {
+    db.fnShowEditWindow({ sFormName: sTableName, oItem: oSelectedItem.value })
+  } else {
+    alert('Нужно выбрать')
   }
 }
+
+function fnRemoveClick() {
+  if (oSelectedItem.value) {
+    if (confirm('Вы уверены что хотите удалить эту запись?')) {
+      db.fnRemoveFromTable({ sTableName, oItem: oSelectedItem.value })
+      oSelectedItem.value = null
+    }
+  } else {
+    alert('Нужно выбрать')
+  }
+}
+
+function fnSaveAll() {
+  db.fnSaveToAllDatabase()
+  db.bShowSaveToast = true
+}
+
+function fnImport() {
+  const oFile = file_selector.value.files[0]
+  const reader = new FileReader()
+  reader.readAsText(oFile)
+  reader.onload = () => db.fnImportDatabase(reader.result)
+}
+
+function fnFileImportChange() { fnImport() }
+
+function fnToggleMask(oE) {
+  const oMasked = oE.target
+  const oReal = oMasked.nextElementSibling
+  if (oReal && oReal.style.display === 'none') {
+    oReal.style.display = ''
+    oMasked.style.display = 'none'
+  }
+  setTimeout(() => {
+    oReal.style.display = 'none'
+    oMasked.style.display = ''
+  }, 3000)
+}
+
+function fnToggleTheme() {
+  bDarkTheme.value = !bDarkTheme.value
+  localStorage.setItem('bDarkTheme', bDarkTheme.value)
+  document.documentElement.setAttribute('data-theme', bDarkTheme.value ? 'dark' : 'light')
+}
+
+function fnResetAutoLock() {
+  clearTimeout(iAutoLockTimer)
+  iAutoLockTimer = setTimeout(() => {
+    if (db.sPassword) {
+      db.sPassword = ''
+      db.bShowRepoWindow = true
+    }
+  }, iAutoLockTimeout)
+}
+
+// --- lifecycle ---
+onMounted(() => {
+  repos.fnLoadRepos()
+
+  if (bDarkTheme.value) {
+    document.documentElement.setAttribute('data-theme', 'dark')
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.keyCode === 83) {
+      e.preventDefault()
+      fnSaveAll()
+    }
+  })
+
+  const fnActivity = () => fnResetAutoLock()
+  document.addEventListener('mousemove', fnActivity)
+  document.addEventListener('keydown', fnActivity)
+  document.addEventListener('click', fnActivity)
+  fnResetAutoLock()
+})
 </script>
 
 <style>

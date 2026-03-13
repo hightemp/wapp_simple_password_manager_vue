@@ -15,38 +15,22 @@
 </div>
 </template>
 
-<script>
+<script setup lang="ts">
+import { computed, watch } from 'vue'
+import { useDatabaseStore } from '../stores/database'
 
-import { mapMutations, mapState, mapActions, mapGetters } from 'vuex'
+const db = useDatabaseStore()
 
-import { a, cc } from "../lib"
+const bShowSaveToast = computed({
+  get: () => db.bShowSaveToast,
+  set: (v) => { db.bShowSaveToast = v },
+})
 
-export default {
-    name: 'SavedToast',
-
-    components: {
-
-    },
-
-    computed: {
-        ...cc(`bShowSaveToast`),
-    },
-
-    data() {
-        return {
-        }
-    },
-
-    watch: {
-        bShowSaveToast(bN, bO) {
-            if (bN) {
-                setTimeout(() => {
-                    this.bShowSaveToast = false
-                }, 2000)
-            }
-        }
-    },
-}
+watch(bShowSaveToast, (bN) => {
+  if (bN) {
+    setTimeout(() => { bShowSaveToast.value = false }, 2000)
+  }
+})
 </script>
 
 <style>

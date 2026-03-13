@@ -1,26 +1,39 @@
 import { Octokit } from "@octokit/rest"
-import { createClient } from "webdav/web"
+import { createClient, WebDAVClient } from "webdav/web"
 import { encode, decode } from 'js-base64'
 import { fnEncrypt, fnDecrypt } from './crypto'
 
+export interface RepoItem {
+  type: 'localstorage' | 'github' | 'webdav'
+  name: string
+  login?: string
+  repo?: string
+  key?: string
+  url?: string
+  username?: string
+  password?: string
+  need_save?: boolean
+}
+
+export interface ReadResult {
+  sData: string
+  sSHA: string
+}
+
 export class FileSystemDriver {
-    /** @var Octokit octokit */
-    octokit = null
-    oSHA = {}
-
-    /** @var WebDAVClient webdav */
-    webdav = null
-
-    oRepoItem = null
+    octokit: Octokit | null = null
+    oSHA: Record<string, string> = {}
+    webdav: WebDAVClient | null = null
+    oRepoItem: RepoItem
 
     // ===============================================================
     
-    constructor (oRepoItem) {
+    constructor(oRepoItem: RepoItem) {
+        this.oRepoItem = oRepoItem
         this.fnInit(oRepoItem)
     }
 
-    fnInit(oRepoItem)
-    {
+    fnInit(oRepoItem: RepoItem): void {
         this.oRepoItem = oRepoItem
 
         if (oRepoItem.type == "github") {
@@ -33,52 +46,47 @@ export class FileSystemDriver {
         }
     }
 
-    fnInitGit()
-    {
+    fnInitGit(): void {
         this.octokit = new Octokit({
             auth: this.oRepoItem.key,
-        });
+        })
     }
 
-    fnInitWebdav()
-    {
+    fnInitWebdav(): void {
         this.webdav = createClient(
-            this.oRepoItem.url,
+            this.oRepoItem.url!,
             {
                 username: this.oRepoItem.username,
                 password: this.oRepoItem.password
             }
-        );
+        )
     }
 
     // ===============================================================
     
-    fnReadFileJSON(sFilePath)
-    {
+    fnReadFileJSON(sFilePath: string): Promise<unknown> {
         return new Promise((fnResolv, fnReject) => {
             this.fnReadFile(sFilePath)
                 .then(({ sData }) => {
                     fnResolv(JSON.parse(sData))
                 })
-                .catch((oE) => { fnReject(oE) })
+                .catch((oE: unknown) => { fnReject(oE) })
         })
     }
 
-    fnReadFileCryptoJSON(sFilePath, sKey)
-    {
+    fnReadFileCryptoJSON(sFilePath: string, sKey: string): Promise<unknown> {
         return new Promise((fnResolv, fnReject) => {
             this.fnReadFile(sFilePath)
                 .then(({ sData }) => {
-                    if (!sData) fnReject("Not Found")
+                    if (!sData) fnReject('Not Found')
                     const sDecrypted = fnDecrypt(sData, sKey)
                     fnResolv(JSON.parse(sDecrypted))
                 })
-                .catch((oE) => { fnReject(oE) })
+                .catch((oE: unknown) => { fnReject(oE) })
         })
     }
 
-    fnReadFile(sFilePath)
-    {
+    fnReadFile(sFilePath: string): Promise<ReadResult> {
         if (this.oRepoItem.type == "localstorage") {
             return this.fnReadFileLocalStorage(sFilePath)
         }
@@ -88,20 +96,18 @@ export class FileSystemDriver {
         if (this.oRepoItem.type == "webdav") {
             return this.fnReadFileWebdav(sFilePath)
         }
+        return Promise.reject(new Error(`Unknown repo type: ${this.oRepoItem.type}`))
     }
 
-    fnWriteFileJSON(sFilePath, mData)
-    {
+    fnWriteFileJSON(sFilePath: string, mData: unknown): Promise<void> {
         return this.fnWriteFile(sFilePath, JSON.stringify(mData, null, 4))
     }
 
-    fnWriteFileCryptoJSON(sFilePath, mData, sKey)
-    {
+    fnWriteFileCryptoJSON(sFilePath: string, mData: unknown, sKey: string): Promise<void> {
         return this.fnWriteFile(sFilePath, fnEncrypt(JSON.stringify(mData, null, 4), sKey))
     }
 
-    fnWriteFile(sFilePath, sData)
-    {
+    fnWriteFile(sFilePath: string, sData: string): Promise<void> {
         if (this.oRepoItem.type == "localstorage") {
             return this.fnWriteFileLocalStorage(sFilePath, sData)
         }
@@ -111,84 +117,78 @@ export class FileSystemDriver {
         if (this.oRepoItem.type == "webdav") {
             return this.fnWriteFileWebdav(sFilePath, sData)
         }
+        return Promise.reject(new Error(`Unknown repo type: ${this.oRepoItem.type}`))
     }
 
-    fnCreateDir(sFilePath)
-    {
-        if (this.oRepoItem.type == "webdav") {
+    fnCreateDir(sFilePath: string): Promise<void> | undefined {
+        if (this.oRepoItem.type == 'webdav') {
             return this.fnCreateDirWebdav(sFilePath)
         }
     }
 
     // ===============================================================
 
-    fnCreateDirWebdav(sFilePath)
-    {
+    fnCreateDirWebdav(sFilePath: string): Promise<void> {
         return new Promise((fnResolv, fnReject) => {
-            this.webdav.createDirectory(sFilePath)
+            this.webdav!.createDirectory(sFilePath)
                 .then(() => fnResolv())
-                .catch((oE) => fnReject(oE))
+                .catch((oE: unknown) => fnReject(oE))
         })
     }
 
-    fnReadFileLocalStorage(sFilePath)
-    {
+    fnReadFileLocalStorage(sFilePath: string): Promise<ReadResult> {
         return new Promise((fnResolv) => {
-            var sData = localStorage.getItem(sFilePath);
-            fnResolv({ sData, sSHA: "" })
+            const sData = localStorage.getItem(sFilePath) ?? ''
+            fnResolv({ sData, sSHA: '' })
         })
     }
 
-    fnReadFileWebdav(sFilePath)
-    {
+    fnReadFileWebdav(sFilePath: string): Promise<ReadResult> {
         return new Promise(async (fnResolv, fnReject) => {
             try {
-                var oData = (await this.webdav.getFileContents(sFilePath))
-                var enc = new TextDecoder("utf-8");
-                var sData = enc.decode(oData)
-                this.oSHA[sFilePath] = ""
-                fnResolv({ sData, sSHA:"" })
+                const oData = await this.webdav!.getFileContents(sFilePath) as ArrayBuffer
+                const enc = new TextDecoder('utf-8')
+                const sData = enc.decode(oData)
+                this.oSHA[sFilePath] = ''
+                fnResolv({ sData, sSHA: '' })
             } catch (oE) {
                 fnReject(oE)
             }
         })
     }
 
-    fnReadFileGithub(sFilePath)
-    {
+    fnReadFileGithub(sFilePath: string): Promise<ReadResult> {
         return new Promise(async (fnResolv, fnReject) => {
-            var oR = this.oRepoItem
+            const oR = this.oRepoItem
             sFilePath = sFilePath.replace(/^\/+/, '')
-            return this.octokit.rest.repos.getContent({
-                owner: oR.login,
-                repo: oR.repo,
+            return this.octokit!.rest.repos.getContent({
+                owner: oR.login!,
+                repo: oR.repo!,
                 path: sFilePath,
-            }).then(({ data }) => {
-                var sData = decode(data.content)
+            }).then(({ data }: any) => {
+                const sData = decode(data.content)
                 this.oSHA[sFilePath] = data.sha
-                fnResolv({sData, sSHA: data.sha})
-            }).catch((oE) => {
+                fnResolv({ sData, sSHA: data.sha })
+            }).catch((oE: unknown) => {
                 fnReject(oE)
             })
         })
     }
 
-    fnWriteFileLocalStorage(sFilePath, sData)
-    {
+    fnWriteFileLocalStorage(sFilePath: string, sData: string): Promise<void> {
         return new Promise((fnResolv) => {
             localStorage.setItem(sFilePath, sData)
             fnResolv()
         })
     }
 
-    fnWriteFileGithub(sFilePath, sData, sSHA=null)
-    {
+    fnWriteFileGithub(sFilePath: string, sData: string, sSHA: string | null = null): Promise<void> {
         return new Promise(async (fnResolv, fnReject) => {
-            var oR = this.oRepoItem
+            const oR = this.oRepoItem
             sFilePath = sFilePath.replace(/^\/+/, '')
-            return this.octokit.rest.repos.createOrUpdateFileContents({
-                owner: oR.login,
-                repo: oR.repo,
+            return this.octokit!.rest.repos.createOrUpdateFileContents({
+                owner: oR.login!,
+                repo: oR.repo!,
                 path: sFilePath,
                 sha: sSHA ? sSHA : this.oSHA[sFilePath],
                 message: this.fnGetUpdateMessage(),
@@ -197,20 +197,18 @@ export class FileSystemDriver {
             .then(() => {
                 fnResolv()
             })
-            .catch((oE) => {
+            .catch((oE: unknown) => {
                 fnReject(oE)
             })
         })
     }
 
-    // FIX: removed double-nested Promise that caused outer resolve to never fire
-    fnWriteFileWebdav(sFilePath, sData)
-    {
+    fnWriteFileWebdav(sFilePath: string, sData: string): Promise<void> {
         return new Promise(async (fnResolv, fnReject) => {
             try {
-                var enc = new TextEncoder()
-                var aData = enc.encode(sData)
-                await this.webdav.putFileContents(
+                const enc = new TextEncoder()
+                const aData = enc.encode(sData)
+                await this.webdav!.putFileContents(
                     sFilePath, 
                     aData,
                     { contentLength: false, overwrite: true }
@@ -222,7 +220,7 @@ export class FileSystemDriver {
         })
     }
 
-    fnGetUpdateMessage() {
-        return "update: "+(new Date())
+    fnGetUpdateMessage(): string {
+        return 'update: ' + new Date()
     }
 }

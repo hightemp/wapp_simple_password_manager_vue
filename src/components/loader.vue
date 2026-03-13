@@ -6,17 +6,12 @@
     </div>
 </template>
 
-<script>
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useDatabaseStore } from '../stores/database'
 
-import { a } from "../lib"
-
-import { mapMutations, mapState, mapActions, mapGetters } from 'vuex'
-
-export default {
-    computed: {
-        ...mapState(a`bShowLoader`)
-    },
-}
+const db = useDatabaseStore()
+const bShowLoader = computed(() => db.bShowLoader)
 </script>
 
 <style>

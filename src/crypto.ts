@@ -2,7 +2,7 @@
  * Crypto module with backward compatibility.
  * 
  * OLD format (v1): 3DES encrypted string (raw ciphertext from CryptoJS.TripleDES)
- * NEW format (v2): JSON envelope { v: 2, data: <AES-encrypted-string>, salt: <hex> }
+ * NEW format (v2): JSON envelope { v: 2, data: <AES-encrypted-string>, salt: <hex>, iv: <hex> }
  * 
  * Reading: tries to parse as v2 JSON first, falls back to 3DES for old files.
  * Writing: always uses AES with PBKDF2 key derivation (v2 format).
@@ -15,13 +15,24 @@ const PBKDF2_KEY_SIZE = 256 / 32  // 256-bit key
 const SALT_SIZE = 128 / 8         // 128-bit salt
 const IV_SIZE = 128 / 8           // 128-bit IV
 
+export interface V2Envelope {
+  v: 2
+  salt: string
+  iv: string
+  data: string
+}
+
+export interface PasswordOptions {
+  uppercase?: boolean
+  lowercase?: boolean
+  digits?: boolean
+  symbols?: boolean
+}
+
 /**
  * Derive a key from password using PBKDF2
- * @param {string} sPassword 
- * @param {CryptoJS.lib.WordArray} oSalt 
- * @returns {CryptoJS.lib.WordArray}
  */
-export function fnDeriveKey(sPassword, oSalt) {
+export function fnDeriveKey(sPassword: string, oSalt: CryptoJS.lib.WordArray): CryptoJS.lib.WordArray {
   return CryptoJS.PBKDF2(sPassword, oSalt, {
     keySize: PBKDF2_KEY_SIZE,
     iterations: PBKDF2_ITERATIONS,
@@ -30,11 +41,8 @@ export function fnDeriveKey(sPassword, oSalt) {
 
 /**
  * Encrypt data with AES + PBKDF2 (v2 format)
- * @param {string} sData - JSON string to encrypt
- * @param {string} sPassword - user password
- * @returns {string} - JSON string with v2 envelope
  */
-export function fnEncryptV2(sData, sPassword) {
+export function fnEncryptV2(sData: string, sPassword: string): string {
   const oSalt = CryptoJS.lib.WordArray.random(SALT_SIZE)
   const oIV = CryptoJS.lib.WordArray.random(IV_SIZE)
   const oKey = fnDeriveKey(sPassword, oSalt)
@@ -49,16 +57,13 @@ export function fnEncryptV2(sData, sPassword) {
     salt: oSalt.toString(CryptoJS.enc.Hex),
     iv: oIV.toString(CryptoJS.enc.Hex),
     data: sEncrypted,
-  })
+  } satisfies V2Envelope)
 }
 
 /**
  * Decrypt v2 format (AES + PBKDF2)
- * @param {object} oEnvelope - parsed { v, salt, data }
- * @param {string} sPassword
- * @returns {string} - decrypted JSON string
  */
-export function fnDecryptV2(oEnvelope, sPassword) {
+export function fnDecryptV2(oEnvelope: V2Envelope, sPassword: string): string {
   const oSalt = CryptoJS.enc.Hex.parse(oEnvelope.salt)
   const oIV = CryptoJS.enc.Hex.parse(oEnvelope.iv)
   const oKey = fnDeriveKey(sPassword, oSalt)
@@ -72,53 +77,39 @@ export function fnDecryptV2(oEnvelope, sPassword) {
 
 /**
  * Decrypt v1 format (legacy 3DES, password used directly as key)
- * @param {string} sData - raw 3DES ciphertext
- * @param {string} sPassword
- * @returns {string} - decrypted JSON string
  */
-export function fnDecryptV1(sData, sPassword) {
+export function fnDecryptV1(sData: string, sPassword: string): string {
   return DES.decrypt(sData, sPassword).toString(CryptoJS.enc.Utf8)
 }
 
 /**
  * Decrypt data with automatic version detection.
  * Tries v2 (AES+PBKDF2) first, falls back to v1 (3DES) for backward compatibility.
- * @param {string} sData - raw file content
- * @param {string} sPassword
- * @returns {string} - decrypted JSON string
  */
-export function fnDecrypt(sData, sPassword) {
-  // Try to parse as v2 JSON envelope
+export function fnDecrypt(sData: string, sPassword: string): string {
   try {
     const oParsed = JSON.parse(sData)
     if (oParsed && oParsed.v === 2 && oParsed.data && oParsed.salt && oParsed.iv) {
-      return fnDecryptV2(oParsed, sPassword)
+      return fnDecryptV2(oParsed as V2Envelope, sPassword)
     }
   } catch (_) {
     // Not JSON — fall through to v1
   }
 
-  // Fallback: v1 legacy 3DES
   return fnDecryptV1(sData, sPassword)
 }
 
 /**
  * Encrypt data (always v2 format)
- * @param {string} sData - JSON string
- * @param {string} sPassword
- * @returns {string} - encrypted string (v2 JSON envelope)
  */
-export function fnEncrypt(sData, sPassword) {
+export function fnEncrypt(sData: string, sPassword: string): string {
   return fnEncryptV2(sData, sPassword)
 }
 
 /**
  * Generate a random password
- * @param {number} iLength - length of password (default 16)
- * @param {object} oOptions - { uppercase, lowercase, digits, symbols }
- * @returns {string}
  */
-export function fnGeneratePassword(iLength = 16, oOptions = {}) {
+export function fnGeneratePassword(iLength: number = 16, oOptions: PasswordOptions = {}): string {
   const {
     uppercase = true,
     lowercase = true,

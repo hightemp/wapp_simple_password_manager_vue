@@ -122,112 +122,101 @@
 </div>
 </template>
 
-<script>
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { useDatabaseStore } from '../stores/database'
+import { useReposStore } from '../stores/repos'
+import { fnSaveFile } from '../lib'
 
-import { fnSaveFile, a, cc } from "../lib"
+const db = useDatabaseStore()
+const repos = useReposStore()
 
-import { mapMutations, mapState, mapActions, mapGetters } from 'vuex'
+const bShowRepoWindow = computed({
+  get: () => db.bShowRepoWindow,
+  set: (v) => { db.bShowRepoWindow = v },
+})
 
-export default {
-    name: 'AskAPIWindow',
+const sPassword = computed({
+  get: () => db.sPassword,
+  set: (v) => { db.sPassword = v },
+})
 
-    components: {
+const iSelectedRepoIndex = computed(() => repos.iSelectedRepoIndex)
+const aReposList = computed(() => repos.aAllRepos)
 
-    },
+const iEditIndex = ref(null)
+const sFormLogin = ref('')
+const sFormRepo = ref('')
+const sFormKey = ref('')
+const sFormURL = ref('')
+const sFromType = ref('github')
+const sFormName = ref('')
+const sFormUsername = ref('')
+const sFormPassword = ref('')
 
-    computed: {
-        ...mapState(a`iSelectedRepoIndex bShowRepoWindow`),
-        ...mapGetters(a`aReposList`),
-        ...cc(`sPassword`)
-    },
+function fnObjToURLParams(oItem) {
+  return '?' + new URLSearchParams(oItem).toString()
+}
 
-    data() {
-        return {
-            iEditIndex: null,
-            sFormLogin: "",
-            sFormRepo: "",
-            sFormKey: "",
-            sFormURL: "",
-            sFromType: "github",
+function fnSaveRepo() {
+  if (!sFormName.value) {
+    alert('Надо заполнить поле - Название')
+    return
+  }
+  const oObj = {
+    name: sFormName.value,
+    login: sFormLogin.value,
+    repo: sFormRepo.value,
+    key: sFormKey.value,
+    type: sFromType.value,
+    url: sFormURL.value,
+    username: sFormUsername.value,
+    password: sFormPassword.value,
+  }
+  repos.fnReposUpdate({ iIndex: iEditIndex.value, oObj })
+  iEditIndex.value = null
+}
 
-            /**
-             * { "login": "", "repo": "", "key": "", type: "", url: "", username: "", password: "", }
-             */
-        }
-    },
-    methods: {
-        ...mapMutations(a`fnReposRemove fnReposSelect fnReposClean fnReposUpdate`),
-        ...mapActions(a`fnPrepareRepo`),
-        fnObjToURLParams(oItem) {
-            return "?"+(new URLSearchParams(oItem).toString())
-        },
-        fnSaveRepo() {
-            if (!this.sFormName) {
-                alert('Надо заполнить поле - Название')
-                return
-            }
-            var oObj = {
-                "name": this.sFormName, 
-                "login": this.sFormLogin, 
-                "repo": this.sFormRepo, 
-                "key": this.sFormKey,
-                "type": this.sFromType,
-                "url": this.sFormURL,
-                "username": this.sFormUsername,
-                "password": this.sFormPassword,
-            }
-            this.fnReposUpdate({ iIndex:this.iEditIndex, oObj })
-            this.iEditIndex=null
-        },
-        fnNewRepo() {
-            this.iEditIndex = -1
-            this.sFormName = ""
-            this.sFormLogin = ""
-            this.sFormRepo = ""
-            this.sFormKey = ""
-            this.sFormType = "github"
-            this.sFormURL = ""
-            this.sFormUsername = ""
-            this.sFormPassword = ""
-        },
-        fnEditRepo(iIndex) {
-            this.iEditIndex = iIndex
-            var oO = this.aReposList[this.iEditIndex]
-            this.sFormName = oO.name
-            this.sFormLogin = oO.login
-            this.sFormRepo = oO.repo
-            this.sFormKey = oO.key
-            this.sFormType = oO.type
-            this.sFormURL = oO.url
-            this.sFormUsername = oO.username
-            this.sFormPassword = oO.password
-        },
-        fnRemoveRepo(iIndex) {
-            this.fnReposRemove(iIndex)
-        },
-        fnSelectRepo(iIndex) {
-            this.fnReposSelect(iIndex)
-        },
-        fnCleanRepo() {
-            this.fnReposClean()
-        },
-        fnCancelRepo() {
-            this.iEditIndex = null
-        },
-        fnAcceptRepo() {
-            if (!this.aReposList[this.iSelectedRepoIndex]) {
-                return alert('Нужно выбрать репозиторий');
-            }
-            this.fnPrepareRepo()
-        },
-        fnExport() {
-            fnSaveFile("database", JSON.stringify(this.aReposList))
-        }
-    },
-    created()
-    {
-        var oThis = this
-    }
+function fnNewRepo() {
+  iEditIndex.value = -1
+  sFormName.value = ''
+  sFormLogin.value = ''
+  sFormRepo.value = ''
+  sFormKey.value = ''
+  sFromType.value = 'github'
+  sFormURL.value = ''
+  sFormUsername.value = ''
+  sFormPassword.value = ''
+}
+
+function fnEditRepo(iIndex) {
+  iEditIndex.value = iIndex
+  const oO = aReposList.value[iEditIndex.value]
+  sFormName.value = oO.name
+  sFormLogin.value = oO.login
+  sFormRepo.value = oO.repo
+  sFormKey.value = oO.key
+  sFromType.value = oO.type
+  sFormURL.value = oO.url
+  sFormUsername.value = oO.username
+  sFormPassword.value = oO.password
+}
+
+function fnRemoveRepo(iIndex) { repos.fnReposRemove(iIndex) }
+function fnSelectRepo(iIndex) { repos.fnReposSelect(iIndex) }
+function fnCleanRepo() { repos.fnReposClean() }
+function fnCancelRepo() { iEditIndex.value = null }
+
+function fnAcceptRepo() {
+  if (!aReposList.value[iSelectedRepoIndex.value]) {
+    return alert('Нужно выбрать репозиторий')
+  }
+  db.bShowRepoWindow = false
+  db.fnPrepareRepo()
+}
+
+function fnExport() {
+  fnSaveFile('database', JSON.stringify(repos.aAllRepos))
 }
 </script>
 
