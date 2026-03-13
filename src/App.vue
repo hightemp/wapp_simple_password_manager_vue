@@ -8,6 +8,10 @@
         </template>
       </button>
       <button class="btn btn-import" title="Импортировать"><i class="bi bi-box-arrow-in-up"></i><label><input type="file" ref="file_selector" @change="fnFileImportChange" /></label></button>
+      <div class="spacer"></div>
+      <button class="btn btn-menu" @click="fnToggleTheme" title="Тема">
+        <i :class="'bi '+(bDarkTheme ? 'bi-sun' : 'bi-moon')"></i>
+      </button>
     </div>
     <div class="table-panel">
       <div class="table-actions-panel">
@@ -50,7 +54,13 @@
                           @click="fnCopyToClipboard(oRow[sK])"
                         ><i class="bi bi-clipboard-check"></i></button>
                       </template>
-                      {{oRow[sK]}}
+                      <template v-if="sK=='password' && oRow[sK]">
+                        <span class="masked-password" @click="fnToggleMask($event)">••••••••</span>
+                        <span class="real-password" style="display:none">{{oRow[sK]}}</span>
+                      </template>
+                      <template v-else>
+                        {{oRow[sK]}}
+                      </template>
                     </template>
                   </div>
               </div>
@@ -68,7 +78,7 @@
 <script>
 
 import { mapMutations, mapState, mapActions, mapGetters } from 'vuex'
-import { a, cc } from "./lib"
+import { a, cc, fnDebounce } from "./lib"
 
 import edit_window from "./components/edit_window.vue"
 import repo_window from "./components/repo_window.vue"
@@ -115,9 +125,7 @@ export default {
         var aRows = this.oTable.data.filter((oI) => {
             var bResult = true;
             for (var sK in this.oTable.filter) {
-                console.log(this.oTable.filter[sK])
                 if (this.oTable.filter[sK]) {
-                    console.log(this.oTable.filter[sK])
                     bResult = bResult && ~oI[sK].indexOf(this.oTable.filter[sK])
                 }
             }
@@ -144,7 +152,10 @@ export default {
         { id: "export", title: "Экспортировать", icon: "bi-box-arrow-down" },
       ],
       oSelectedItem: null,
-      sTableName: 'table'
+      sTableName: 'table',
+      bDarkTheme: localStorage.getItem('bDarkTheme') === 'true',
+      iAutoLockTimer: null,
+      iAutoLockTimeout: 5 * 60 * 1000, // 5 minutes
     }
   },
 
@@ -180,9 +191,9 @@ export default {
     fnCopyToClipboard(sText) {
       navigator.clipboard.writeText(sText);
     },
-    fnFilterInput(oE, sK) {
+    fnFilterInput: fnDebounce(function(oE, sK) {
       this.$store.commit('fnUpdateFilter', { sTableName: this.sTableName, sName: sK, sV:oE.target.value })
-    },
+    }, 300),
     fnClickLeftMenu(oItem) {
       if (oItem.id == "repo-window") {
         this.bShowRepoWindow = true
@@ -221,7 +232,10 @@ export default {
     },
     fnRemoveClick() {
         if (this.oSelectedItem) {
-            this.fnRemoveFromTable({ sTableName: this.sTableName, oItem: this.oSelectedItem })
+            if (confirm('Вы уверены что хотите удалить эту запись?')) {
+                this.fnRemoveFromTable({ sTableName: this.sTableName, oItem: this.oSelectedItem })
+                this.oSelectedItem = null
+            }
         } else {
             alert("Нужно выбрать")
         }
@@ -252,18 +266,57 @@ export default {
     fnFileImportChange() {
       this.fnImport()
     },
+    fnToggleMask(oE) {
+      const oMasked = oE.target
+      const oReal = oMasked.nextElementSibling
+      if (oReal && oReal.style.display === 'none') {
+        oReal.style.display = ''
+        oMasked.style.display = 'none'
+      }
+      // Auto-hide after 3 seconds
+      setTimeout(() => {
+        oReal.style.display = 'none'
+        oMasked.style.display = ''
+      }, 3000)
+    },
+    fnToggleTheme() {
+      this.bDarkTheme = !this.bDarkTheme
+      localStorage.setItem('bDarkTheme', this.bDarkTheme)
+      document.documentElement.setAttribute('data-theme', this.bDarkTheme ? 'dark' : 'light')
+    },
+    fnResetAutoLock() {
+      clearTimeout(this.iAutoLockTimer)
+      this.iAutoLockTimer = setTimeout(() => {
+        if (this.sPassword) {
+          this.sPassword = ''
+          this.bShowRepoWindow = true
+        }
+      }, this.iAutoLockTimeout)
+    },
   },
   created() {
     var oThis = this;
 
     this.fnLoadRepos()
 
+    // Apply saved theme
+    if (this.bDarkTheme) {
+      document.documentElement.setAttribute('data-theme', 'dark')
+    }
+
     document.addEventListener('keydown', e => {
       if (e.ctrlKey && e.keyCode === 83) {
           e.preventDefault();
           oThis.fnSaveAll()
       }
-    });    
+    });
+
+    // Auto-lock: reset timer on user activity
+    const fnActivity = () => this.fnResetAutoLock()
+    document.addEventListener('mousemove', fnActivity)
+    document.addEventListener('keydown', fnActivity)
+    document.addEventListener('click', fnActivity)
+    this.fnResetAutoLock()
   }
 }
 </script>

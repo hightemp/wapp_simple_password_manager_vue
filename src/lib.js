@@ -41,3 +41,17 @@ export function fnSaveFile(sFileName, sData) {
     oE.click();
     oE.remove()
 }
+
+/**
+ * Debounce function — delays execution until after wait ms of inactivity
+ * @param {Function} fn 
+ * @param {number} iDelay - milliseconds
+ * @returns {Function}
+ */
+export function fnDebounce(fn, iDelay = 300) {
+    let iTimer = null
+    return function (...args) {
+        clearTimeout(iTimer)
+        iTimer = setTimeout(() => fn.apply(this, args), iDelay)
+    }
+}

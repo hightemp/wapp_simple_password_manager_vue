@@ -214,13 +214,11 @@ export default createStore({
         },
         fnCreateFileSystem(state, { iIndex }) {
             var aRepos = state.aDefaultRepoList.concat(state.aReposList)
-            console.log(aRepos[iIndex])
             state.oReposFileSystem[iIndex] = new FileSystemDriver(aRepos[iIndex])
         },
         fnSetNeedSaveToCurrentRepo(state) {
             var aRepos = state.aDefaultRepoList.concat(state.aReposList)
             aRepos[state.iSelectedRepoIndex].need_save = true
-            console.log(aRepos[state.iSelectedRepoIndex])
         },
     },
     actions: {
@@ -276,7 +274,6 @@ export default createStore({
                     commit('fnHideLoader')
                 })
                 .catch((oE) => {
-                    console.error(oE)
                     if ((oE+"").match(/Malformed UTF-8 data/)) {
                         alert("Не правильный пароль");
                         commit('fnShowRepoWindow')

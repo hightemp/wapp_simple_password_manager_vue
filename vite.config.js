@@ -5,6 +5,10 @@ import path from 'path'
 
 export default defineConfig({
   base: './',
+  test: {
+    environment: 'jsdom',
+    globals: true,
+  },
   plugins: [
     vue(),
     VitePWA({
