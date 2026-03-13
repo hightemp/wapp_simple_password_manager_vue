@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, markRaw } from 'vue'
 import { FileSystemDriver } from '../FileSystemDriver'
 
 export const useReposStore = defineStore('repos', () => {
@@ -85,7 +85,7 @@ export const useReposStore = defineStore('repos', () => {
 
   function fnCreateFileSystem(iIndex) {
     const aRepos = aAllRepos.value
-    oReposFileSystem.value[iIndex] = new FileSystemDriver(aRepos[iIndex])
+    oReposFileSystem.value[iIndex] = markRaw(new FileSystemDriver(aRepos[iIndex]))
   }
 
   function fnSetNeedSaveToCurrentRepo() {
