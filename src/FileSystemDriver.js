@@ -1,8 +1,8 @@
 import { Octokit } from "@octokit/rest"
 import { createClient } from "webdav/web"
 import { encode, decode } from 'js-base64'
-var CryptoJS = require("crypto-js");
-var DES = require("crypto-js/tripledes");
+import CryptoJS from 'crypto-js'
+import DES from 'crypto-js/tripledes.js'
 
 export class FileSystemDriver {
     /** @var Octokit octokit */
