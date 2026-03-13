@@ -57,12 +57,25 @@ export default defineConfig({
       },
     }),
   ],
+  define: {
+    global: 'globalThis',
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      // @octokit/request dist-web imports node-fetch as fallback,
+      // but uses globalThis.fetch in browsers — stub node-fetch out
+      'node-fetch': path.resolve(__dirname, 'src/stubs/node-fetch.js'),
     },
   },
   build: {
     outDir: 'docs',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['@octokit/rest', 'webdav/web'],
+        },
+      },
+    },
   },
 })
