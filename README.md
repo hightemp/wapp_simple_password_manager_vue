@@ -2,7 +2,16 @@
 
 A self-hosted, encrypted password manager built with Vue 3. Store your passwords securely in LocalStorage, GitHub, or WebDAV with zero-knowledge AES-256 encryption.
 
-![Light Theme](images/screenshot-light.png)
+![Password Manager — Light Theme](images/screenshot-light.png)
+
+![Password Manager — Dark Theme](images/screenshot-dark.png)
+
+<details>
+<summary>📱 Mobile View</summary>
+
+![Password Manager — Mobile](images/screenshot-mobile.png)
+
+</details>
 
 ## Features
 
