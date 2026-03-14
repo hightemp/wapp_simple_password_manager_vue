@@ -207,7 +207,7 @@
 ### 5.5 Touch-оптимизация
 - [ ] Все кликабельные элементы: минимальный размер `44×44px` (Apple HIG / WCAG)
 - [ ] Добавить `-webkit-tap-highlight-color: transparent` и `:active` состояния для мобильных касаний
-- [ ] `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">` — поддержка safe area (notch)
+- [x] `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">` — поддержка safe area (notch)
 - [ ] Кнопка copy: увеличить до `36×36px` на мобилке, показывать всегда (не только на hover, hover не работает на touch)
 - [ ] Pull to refresh → перезагрузить данные из репозитория
 
@@ -233,9 +233,9 @@
 
 - [x] Подключить шрифт Inter (через `@fontsource/inter` или Google Fonts) для UI текста
 - [x] Подключить шрифт JetBrains Mono (через `@fontsource/jetbrains-mono`) для паролей и моноширинных данных
-- [ ] Шкала размеров текста: `--text-xs: 11px`, `--text-sm: 12px`, `--text-base: 14px`, `--text-lg: 16px`, `--text-xl: 20px`
-- [ ] Иконки: заменить Bootstrap Icons на Lucide Icons — более чистый, консистентный набор, меньший вес, хорошо вписывается в минималистичный UI
-- [ ] Иконки в ячейках: добавить мелкие иконки рядом с данными (user для логина, lock для пароля, link для URL) — цвет `var(--c-text-muted)`, `opacity: 0.5`
+- [x] Шкала размеров текста: `--text-xs: 11px`, `--text-sm: 12px`, `--text-base: 14px`, `--text-lg: 16px`, `--text-xl: 20px`
+- [x] Иконки: заменить Bootstrap Icons на Lucide Icons — более чистый, консистентный набор, меньший вес, хорошо вписывается в минималистичный UI
+- [x] Иконки в ячейках: добавить мелкие иконки рядом с данными (user для логина, lock для пароля, link для URL) — цвет `var(--c-text-muted)`, `opacity: 0.5`
 
 ## 9. Окно репозитория — UX-детали
 
