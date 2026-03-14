@@ -5,7 +5,7 @@ import { FileSystemDriver } from '../FileSystemDriver'
 export const useReposStore = defineStore('repos', () => {
   // --- state ---
   const aDefaultRepoList = ref([
-    { type: 'localstorage', name: 'Локальное хранилище' },
+    { type: 'localstorage', name: 'Local Storage' },
   ])
   const aReposList = ref([])
   const oReposFileSystem = ref({})

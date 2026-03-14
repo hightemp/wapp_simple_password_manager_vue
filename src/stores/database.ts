@@ -12,12 +12,12 @@ export const useDatabaseStore = defineStore('database', () => {
 
   const oStructure = ref({
     table: {
-      category: { label: 'Категория', type: 'text' },
-      name: { label: 'Название', type: 'text' },
-      login: { label: 'Логин', type: 'text' },
-      password: { label: 'Пароль', type: 'text' },
+      category: { label: 'Category', type: 'text' },
+      name: { label: 'Name', type: 'text' },
+      login: { label: 'Login', type: 'text' },
+      password: { label: 'Password', type: 'text' },
       url: { label: 'URL', type: 'text' },
-      description: { label: 'Описание', type: 'textarea' },
+      description: { label: 'Description', type: 'textarea' },
     },
   })
 
@@ -177,7 +177,7 @@ export const useDatabaseStore = defineStore('database', () => {
       })
       .catch((oE) => {
         if ((oE + '').match(/Malformed UTF-8 data/)) {
-          alert('Не правильный пароль')
+          alert('Incorrect password')
           bShowRepoWindow.value = true
           return
         }

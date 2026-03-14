@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import UnoCSS from 'unocss/vite'
 import path from 'path'
 
 export default defineConfig({
@@ -8,8 +9,10 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    exclude: ['e2e/**', 'node_modules/**'],
   },
   plugins: [
+    UnoCSS(),
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
