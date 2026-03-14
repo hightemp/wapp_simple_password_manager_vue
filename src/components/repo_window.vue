@@ -14,6 +14,19 @@
         />
       </div>
 
+      <!-- Connection error -->
+      <Transition name="error-slide">
+        <div v-if="sConnectionError" class="connection-error">
+          <div class="connection-error-icon"><div class="i-lucide-alert-circle" /></div>
+          <div class="connection-error-body">
+            <span class="connection-error-text">{{ sConnectionError }}</span>
+            <button class="connection-error-close" @click="sConnectionError = ''" aria-label="Dismiss">
+              <div class="i-lucide-x" />
+            </button>
+          </div>
+        </div>
+      </Transition>
+
       <!-- Repo list -->
       <div class="repo-list">
         <div
@@ -166,6 +179,11 @@ const sPassword = computed({
   set: (v) => { db.sPassword = v },
 })
 
+const sConnectionError = computed({
+  get: () => db.sConnectionError,
+  set: (v) => { db.sConnectionError = v },
+})
+
 const iSelectedRepoIndex = computed(() => repos.iSelectedRepoIndex)
 const aReposList = computed(() => repos.aAllRepos)
 
@@ -263,6 +281,7 @@ function fnAcceptRepo() {
   if (!aReposList.value[iSelectedRepoIndex.value]) {
     return alert('Please select a repository')
   }
+  sConnectionError.value = ''
   db.bShowRepoWindow = false
   db.fnPrepareRepo()
 }
@@ -316,6 +335,79 @@ function fnExport() {
 }
 .master-input::placeholder {
   color: var(--c-text-muted);
+}
+
+/* === Connection error === */
+.connection-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--c-danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-danger) 25%, transparent);
+  border-radius: var(--radius-md);
+}
+
+.connection-error-icon {
+  color: var(--c-danger);
+  font-size: 16px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.connection-error-body {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.connection-error-text {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--c-danger);
+  line-height: 1.4;
+}
+
+.connection-error-close {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--c-danger);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  opacity: 0.6;
+  transition: opacity var(--transition-fast);
+}
+.connection-error-close:hover {
+  opacity: 1;
+}
+
+/* Error slide transition */
+.error-slide-enter-active,
+.error-slide-leave-active {
+  transition: all 200ms ease;
+}
+.error-slide-enter-from,
+.error-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+}
+.error-slide-enter-to,
+.error-slide-leave-from {
+  max-height: 80px;
 }
 
 .repo-list {

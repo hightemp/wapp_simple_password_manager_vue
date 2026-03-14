@@ -167,6 +167,7 @@ export const useDatabaseStore = defineStore('database', () => {
 
   function fnLoadDatabase() {
     const repos = useReposStore()
+    sConnectionError.value = ''
     bShowLoader.value = true
     repos.oCurrentFileSystem
       .fnReadFileCryptoJSON(DATABASE_PATH, sPassword.value)
@@ -176,14 +177,23 @@ export const useDatabaseStore = defineStore('database', () => {
         bShowLoader.value = false
       })
       .catch((oE) => {
-        if ((oE + '').match(/Malformed UTF-8 data/)) {
-          alert('Incorrect password')
+        const sErr = oE + ''
+        // Wrong password — decryption produces invalid data
+        if (
+          sErr.match(/Malformed UTF-8 data/) ||
+          sErr.match(/SyntaxError/) ||
+          sErr.match(/Unexpected token/) ||
+          sErr.match(/JSON\.parse/)
+        ) {
+          bShowLoader.value = false
+          sConnectionError.value = 'Incorrect password. Please check your master password and try again.'
           bShowRepoWindow.value = true
           return
         }
+        // No database yet — create new one
         if (
-          (oE + '').match(/Cannot destructure property/) ||
-          (oE + '').match(/Not Found/)
+          sErr.match(/Cannot destructure property/) ||
+          sErr.match(/Not Found/)
         ) {
           repos.oCurrentFileSystem
             .fnWriteFileCryptoJSON(DATABASE_PATH, oDatabase.value, sPassword.value)
@@ -194,9 +204,22 @@ export const useDatabaseStore = defineStore('database', () => {
                   fnUpdateDatabase(mData)
                   bShowLoader.value = false
                 })
+                .catch(() => {
+                  bShowLoader.value = false
+                  sConnectionError.value = 'Failed to read the newly created database.'
+                  bShowRepoWindow.value = true
+                })
+            })
+            .catch(() => {
+              bShowLoader.value = false
+              sConnectionError.value = 'Failed to create new database.'
+              bShowRepoWindow.value = true
             })
           return
         }
+        // Unknown error
+        bShowLoader.value = false
+        sConnectionError.value = 'Connection failed: ' + sErr
         bShowRepoWindow.value = true
       })
   }
@@ -209,6 +232,7 @@ export const useDatabaseStore = defineStore('database', () => {
   const bShowLoader = ref(false)
   const bShowSaveToast = ref(false)
   const bShowRepoWindow = ref(true)
+  const sConnectionError = ref('')
 
   return {
     sPassword,
@@ -220,6 +244,7 @@ export const useDatabaseStore = defineStore('database', () => {
     bShowLoader,
     bShowSaveToast,
     bShowRepoWindow,
+    sConnectionError,
     fnGetFieldValue,
     fnUpdateFormVar,
     fnUpdateDatabaseVar,
