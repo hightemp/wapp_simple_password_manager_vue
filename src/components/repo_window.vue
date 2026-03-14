@@ -11,6 +11,7 @@
           class="master-input"
           placeholder="Master Password"
           v-model="sPassword"
+          autocomplete="off"
         />
       </div>
 
@@ -80,25 +81,25 @@
 
       <div class="form-field">
         <label class="form-field-label">Name</label>
-        <input type="text" :class="['form-field-input', { 'input-error': formErrors.name }]" v-model="sFormName" placeholder="My Repository" />
+        <input type="text" :class="['form-field-input', { 'input-error': formErrors.name }]" v-model="sFormName" placeholder="My Repository" autocomplete="off" />
         <span v-if="formErrors.name" class="field-error">{{ formErrors.name }}</span>
       </div>
 
       <template v-if="sFromType === 'github'">
         <div class="form-field">
           <label class="form-field-label">Login</label>
-          <input type="text" :class="['form-field-input', { 'input-error': formErrors.login }]" v-model="sFormLogin" placeholder="username" />
+          <input type="text" :class="['form-field-input', { 'input-error': formErrors.login }]" v-model="sFormLogin" placeholder="username" autocomplete="off" />
           <span v-if="formErrors.login" class="field-error">{{ formErrors.login }}</span>
         </div>
         <div class="form-field">
           <label class="form-field-label">Repository</label>
-          <input type="text" :class="['form-field-input', { 'input-error': formErrors.repo }]" v-model="sFormRepo" placeholder="repo-name" />
+          <input type="text" :class="['form-field-input', { 'input-error': formErrors.repo }]" v-model="sFormRepo" placeholder="repo-name" autocomplete="off" />
           <span v-if="formErrors.repo" class="field-error">{{ formErrors.repo }}</span>
         </div>
         <div class="form-field">
           <label class="form-field-label">API Key</label>
           <div class="input-with-toggle">
-            <input :type="bShowApiKey ? 'text' : 'password'" :class="['form-field-input', { 'input-error': formErrors.key }]" v-model="sFormKey" placeholder="ghp_..." />
+            <input :type="bShowApiKey ? 'text' : 'password'" :class="['form-field-input', { 'input-error': formErrors.key }]" v-model="sFormKey" placeholder="ghp_..." autocomplete="off" />
             <button class="input-toggle-btn" @click="bShowApiKey = !bShowApiKey" type="button" :aria-label="bShowApiKey ? 'Hide' : 'Show'">
               <div :class="bShowApiKey ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
             </button>
@@ -110,18 +111,18 @@
       <template v-if="sFromType === 'webdav'">
         <div class="form-field">
           <label class="form-field-label">URL</label>
-          <input type="url" :class="['form-field-input', { 'input-error': formErrors.url }]" v-model="sFormURL" placeholder="https://..." />
+          <input type="url" :class="['form-field-input', { 'input-error': formErrors.url }]" v-model="sFormURL" placeholder="https://..." autocomplete="off" />
           <span v-if="formErrors.url" class="field-error">{{ formErrors.url }}</span>
         </div>
         <div class="form-field">
           <label class="form-field-label">Username</label>
-          <input type="text" :class="['form-field-input', { 'input-error': formErrors.username }]" v-model="sFormUsername" />
+          <input type="text" :class="['form-field-input', { 'input-error': formErrors.username }]" v-model="sFormUsername" autocomplete="off" />
           <span v-if="formErrors.username" class="field-error">{{ formErrors.username }}</span>
         </div>
         <div class="form-field">
           <label class="form-field-label">Password</label>
           <div class="input-with-toggle">
-            <input :type="bShowWdPw ? 'text' : 'password'" :class="['form-field-input', { 'input-error': formErrors.password }]" v-model="sFormPassword" />
+            <input :type="bShowWdPw ? 'text' : 'password'" :class="['form-field-input', { 'input-error': formErrors.password }]" v-model="sFormPassword" autocomplete="off" />
             <button class="input-toggle-btn" @click="bShowWdPw = !bShowWdPw" type="button" :aria-label="bShowWdPw ? 'Hide' : 'Show'">
               <div :class="bShowWdPw ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
             </button>
@@ -133,7 +134,7 @@
       <template v-if="sFromType === 'googledrive'">
         <div class="form-field">
           <label class="form-field-label">Client ID</label>
-          <input type="text" :class="['form-field-input', { 'input-error': formErrors.gdrive_client_id }]" v-model="sFormGDriveClientId" placeholder="123456.apps.googleusercontent.com" />
+          <input type="text" :class="['form-field-input', { 'input-error': formErrors.gdrive_client_id }]" v-model="sFormGDriveClientId" placeholder="123456.apps.googleusercontent.com" autocomplete="off" />
           <span v-if="formErrors.gdrive_client_id" class="field-error">{{ formErrors.gdrive_client_id }}</span>
         </div>
         <p class="gdrive-hint">Files are stored in the hidden appDataFolder — only this app can access them.</p>

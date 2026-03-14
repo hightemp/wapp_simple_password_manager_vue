@@ -9,6 +9,7 @@
       rows="4"
       :placeholder="oItem.placeholder"
       v-model="mValue"
+      autocomplete="off"
     />
 
     <!-- select -->
@@ -57,6 +58,7 @@
       class="form-field-input"
       :placeholder="oItem.placeholder"
       v-model="mValue"
+      autocomplete="off"
     />
   </div>
 </template>

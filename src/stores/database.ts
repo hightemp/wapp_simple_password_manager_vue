@@ -132,15 +132,17 @@ export const useDatabaseStore = defineStore('database', () => {
 
   function fnSaveToAllDatabase() {
     const repos = useReposStore()
+    const aPromises: Promise<void>[] = []
     for (const iIndex in repos.aAllRepos) {
       const oRepo = repos.aAllRepos[iIndex]
       if (oRepo.need_save) {
         if (!repos.oReposFileSystem[iIndex]) {
           repos.fnCreateFileSystem(iIndex)
         }
-        fnSaveDatabase({ oFileSystem: repos.oReposFileSystem[iIndex] })
+        aPromises.push(fnSaveDatabase({ oFileSystem: repos.oReposFileSystem[iIndex] }))
       }
     }
+    return Promise.all(aPromises)
   }
 
   function fnSaveCurrentDatabase() {

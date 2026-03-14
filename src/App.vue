@@ -95,6 +95,7 @@
                   :value="oTable.filter[sK]"
                   @input="(oE) => fnFilterInput(oE, sK)"
                   @click.stop
+                  autocomplete="off"
                 />
               </div>
             </div>
@@ -209,6 +210,48 @@
       </div>
     </BaseModal>
 
+    <!-- ===== Change Master Password Modal ===== -->
+    <BaseModal v-model="bShowChangePw" title="Change Master Password" size="sm" :closable="true">
+      <div class="chpw-form">
+        <p class="chpw-hint">The database will be re-encrypted with the new password and saved to all connected repositories.</p>
+
+        <div class="form-field">
+          <label class="form-field-label">Current Password</label>
+          <input type="password" class="form-field-input" :value="db.sPassword" readonly autocomplete="off" />
+        </div>
+
+        <div class="form-field">
+          <label class="form-field-label">New Password</label>
+          <input type="password" class="form-field-input" v-model="sNewPassword" autocomplete="off"
+            :class="{ 'input-error': sChPwError && !sNewPassword }" placeholder="Enter new password" />
+        </div>
+
+        <div class="form-field">
+          <label class="form-field-label">Confirm New Password</label>
+          <input type="password" class="form-field-input" v-model="sNewPasswordConfirm" autocomplete="off"
+            :class="{ 'input-error': sChPwError && sNewPassword !== sNewPasswordConfirm }" placeholder="Repeat new password" />
+        </div>
+
+        <Transition name="error-slide">
+          <div v-if="sChPwError" class="chpw-error">
+            <div class="i-lucide-alert-circle" />
+            <span>{{ sChPwError }}</span>
+          </div>
+        </Transition>
+      </div>
+
+      <template #footer>
+        <div class="modal-footer-row">
+          <button class="action-btn action-btn--ghost" @click="bShowChangePw = false">Cancel</button>
+          <button class="action-btn action-btn--primary" @click="fnChangePassword" :disabled="bChPwSaving">
+            <div v-if="bChPwSaving" class="i-lucide-loader-2 spin" />
+            <div v-else class="i-lucide-key" />
+            {{ bChPwSaving ? 'Saving...' : 'Change Password' }}
+          </button>
+        </div>
+      </template>
+    </BaseModal>
+
     <!-- ===== Mobile bottom nav ===== -->
     <nav class="bottom-nav">
       <button class="bottom-nav-btn" @click="db.bShowRepoWindow = true" aria-label="Repository">
@@ -262,6 +305,7 @@ provide('notify', (title: string, message?: string, type?: 'success' | 'error' |
 const menuTop = [
   { id: 'repo-window', title: 'Select Repository', icon: 'i-lucide-database' },
   { id: 'save', title: 'Save', icon: 'i-lucide-save' },
+  { id: 'change-password', title: 'Change Password', icon: 'i-lucide-key-round' },
   { id: 'add', title: 'Add', icon: 'i-lucide-plus' },
   { id: 'edit', title: 'Edit', icon: 'i-lucide-pencil' },
   { id: 'remove', title: 'Delete', icon: 'i-lucide-trash-2' },
@@ -425,6 +469,7 @@ const fnFilterInput = fnDebounce((oE: Event, sK: string) => {
 function fnClickLeftMenu(oItem: { id: string }) {
   if (oItem.id === 'repo-window') db.bShowRepoWindow = true
   if (oItem.id === 'save') fnSaveAll()
+  if (oItem.id === 'change-password') fnOpenChangePassword()
   if (oItem.id === 'add') fnAddClick()
   if (oItem.id === 'edit') fnEditClick()
   if (oItem.id === 'remove') fnRemoveClick()
@@ -521,6 +566,60 @@ function fnSaveAll() {
   bSaveAnim.value = true
   setTimeout(() => { bSaveAnim.value = false }, 2000)
   notifRef.value?.show('Saved', 'Data has been saved', 'success')
+}
+
+// --- Change Master Password ---
+const bShowChangePw = ref(false)
+const sNewPassword = ref('')
+const sNewPasswordConfirm = ref('')
+const sChPwError = ref('')
+const bChPwSaving = ref(false)
+
+function fnOpenChangePassword() {
+  if (!db.sPassword) {
+    notifRef.value?.show('Not connected', 'Connect to a repository first', 'error')
+    return
+  }
+  sNewPassword.value = ''
+  sNewPasswordConfirm.value = ''
+  sChPwError.value = ''
+  bChPwSaving.value = false
+  bShowChangePw.value = true
+}
+
+async function fnChangePassword() {
+  sChPwError.value = ''
+
+  if (!sNewPassword.value) {
+    sChPwError.value = 'New password is required'
+    return
+  }
+  if (sNewPassword.value.length < 4) {
+    sChPwError.value = 'Password must be at least 4 characters'
+    return
+  }
+  if (sNewPassword.value !== sNewPasswordConfirm.value) {
+    sChPwError.value = 'Passwords do not match'
+    return
+  }
+  if (sNewPassword.value === db.sPassword) {
+    sChPwError.value = 'New password must be different from the current one'
+    return
+  }
+
+  bChPwSaving.value = true
+  try {
+    // Update the master password in the store
+    db.sPassword = sNewPassword.value
+    // Re-encrypt and save to all repos with the new password
+    await db.fnSaveToAllDatabase()
+    bShowChangePw.value = false
+    notifRef.value?.show('Password Changed', 'Database re-encrypted with the new password', 'success')
+  } catch (e) {
+    sChPwError.value = 'Failed to save: ' + e
+  } finally {
+    bChPwSaving.value = false
+  }
 }
 
 function fnTriggerImport() {
@@ -1181,6 +1280,38 @@ onUnmounted(() => {
   font-size: var(--text-sm);
   color: var(--c-text-secondary);
 }
+
+/* ===== Change Password Modal ===== */
+.chpw-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chpw-hint {
+  font-size: var(--text-sm);
+  color: var(--c-text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.chpw-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--c-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-danger) 30%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--c-danger);
+  font-size: var(--text-sm);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin { animation: spin 1s linear infinite; }
 
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
