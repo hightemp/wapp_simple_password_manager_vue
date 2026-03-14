@@ -418,6 +418,8 @@ function fnOpenUrl(url: string) {
 
 const fnFilterInput = fnDebounce((oE: Event, sK: string) => {
   db.fnUpdateFilter({ sTableName, sName: sK, sV: (oE.target as HTMLInputElement).value })
+  // Reset to page 1 when filter changes so rows aren't out of range
+  iPage.value = 1
 }, 300)
 
 function fnClickLeftMenu(oItem: { id: string }) {

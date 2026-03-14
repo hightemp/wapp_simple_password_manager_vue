@@ -39,6 +39,7 @@
             <div class="repo-card-icon">
               <div v-if="oItem.type === 'github'" class="i-lucide-github" />
               <div v-else-if="oItem.type === 'webdav'" class="i-lucide-cloud" />
+              <div v-else-if="oItem.type === 'googledrive'" class="i-lucide-hard-drive" />
               <div v-else class="i-lucide-hard-drive" />
             </div>
             <div class="repo-card-info">
@@ -73,6 +74,7 @@
         <select class="form-field-input" v-model="sFromType">
           <option value="github">GitHub</option>
           <option value="webdav">WebDAV</option>
+          <option value="googledrive">Google Drive</option>
         </select>
       </div>
 
@@ -126,6 +128,15 @@
           </div>
           <span v-if="formErrors.password" class="field-error">{{ formErrors.password }}</span>
         </div>
+      </template>
+
+      <template v-if="sFromType === 'googledrive'">
+        <div class="form-field">
+          <label class="form-field-label">Client ID</label>
+          <input type="text" :class="['form-field-input', { 'input-error': formErrors.gdrive_client_id }]" v-model="sFormGDriveClientId" placeholder="123456.apps.googleusercontent.com" />
+          <span v-if="formErrors.gdrive_client_id" class="field-error">{{ formErrors.gdrive_client_id }}</span>
+        </div>
+        <p class="gdrive-hint">Files are stored in the hidden appDataFolder — only this app can access them.</p>
       </template>
 
       <div class="form-actions">
@@ -196,6 +207,7 @@ const sFromType = ref('github')
 const sFormName = ref('')
 const sFormUsername = ref('')
 const sFormPassword = ref('')
+const sFormGDriveClientId = ref('')
 const bShowApiKey = ref(false)
 const bShowWdPw = ref(false)
 const formErrors = reactive<Record<string, string>>({})
@@ -228,6 +240,14 @@ function fnValidateRepo(): boolean {
     if (!sFormPassword.value.trim()) formErrors.password = 'Password is required'
   }
 
+  if (sFromType.value === 'googledrive') {
+    if (!sFormGDriveClientId.value.trim()) {
+      formErrors.gdrive_client_id = 'Client ID is required'
+    } else if (!sFormGDriveClientId.value.includes('.apps.googleusercontent.com')) {
+      formErrors.gdrive_client_id = 'Client ID must contain .apps.googleusercontent.com'
+    }
+  }
+
   return Object.keys(formErrors).length === 0
 }
 
@@ -242,6 +262,7 @@ function fnSaveRepo() {
     url: sFormURL.value,
     username: sFormUsername.value,
     password: sFormPassword.value,
+    gdrive_client_id: sFormGDriveClientId.value,
   }
   repos.fnReposUpdate({ iIndex: iEditIndex.value, oObj })
   iEditIndex.value = null
@@ -257,6 +278,7 @@ function fnNewRepo() {
   sFormURL.value = ''
   sFormUsername.value = ''
   sFormPassword.value = ''
+  sFormGDriveClientId.value = ''
 }
 
 function fnEditRepo(iIndex: number) {
@@ -270,6 +292,7 @@ function fnEditRepo(iIndex: number) {
   sFormURL.value = oO.url
   sFormUsername.value = oO.username
   sFormPassword.value = oO.password
+  sFormGDriveClientId.value = oO.gdrive_client_id || ''
 }
 
 function fnRemoveRepo(iIndex: number) { repos.fnReposRemove(iIndex) }
@@ -694,5 +717,12 @@ function fnExport() {
   .repo-card-actions {
     opacity: 1;
   }
+}
+
+.gdrive-hint {
+  font-size: var(--text-sm);
+  color: var(--c-text-muted);
+  margin-top: var(--space-1);
+  line-height: 1.4;
 }
 </style>

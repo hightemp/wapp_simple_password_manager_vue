@@ -1,6 +1,6 @@
 # Password Manager
 
-A self-hosted, encrypted password manager built with Vue 3. Store your passwords securely in LocalStorage, GitHub, or WebDAV with zero-knowledge AES-256 encryption.
+A self-hosted, encrypted password manager built with Vue 3. Store your passwords securely in LocalStorage, GitHub, WebDAV, or Google Drive with zero-knowledge AES-256 encryption.
 
 ![Password Manager — Light Theme](images/screenshot-light.png)
 
@@ -16,7 +16,7 @@ A self-hosted, encrypted password manager built with Vue 3. Store your passwords
 ## Features
 
 - **AES-256-GCM encryption** — passwords encrypted client-side with PBKDF2 key derivation (100k iterations)
-- **Multiple storage backends** — LocalStorage, GitHub repository, or WebDAV server
+- **Multiple storage backends** — LocalStorage, GitHub repository, WebDAV server, or Google Drive (appDataFolder)
 - **Multi-repo sync** — save to multiple repositories simultaneously
 - **Dark theme** — automatic system detection + manual toggle
 - **PWA** — install as a native app on any device
@@ -37,7 +37,7 @@ A self-hosted, encrypted password manager built with Vue 3. Store your passwords
 - **Vite 6** — fast builds with HMR
 - **UnoCSS** — atomic CSS with custom design tokens
 - **Lucide Icons** — clean, consistent icon set
-- **Vitest** — 54 unit tests (crypto, lib, stores, FileSystemDriver)
+- **Vitest** — 74 unit tests (crypto, lib, stores, FileSystemDriver, GoogleDriveClient)
 - **Web Crypto API** — native browser encryption (AES-256-GCM + PBKDF2)
 
 ## Getting Started
@@ -78,6 +78,7 @@ On first launch, the Repository Settings modal appears. Choose a storage backend
 | **LocalStorage** | Built-in, no setup needed. Data stored in browser. |
 | **GitHub** | Store encrypted database in a GitHub repository. Requires a Personal Access Token with `repo` scope. |
 | **WebDAV** | Store on any WebDAV server (Nextcloud, ownCloud, etc.) |
+| **Google Drive** | Store in Google Drive's hidden appDataFolder. Requires an OAuth 2.0 Client ID. |
 
 ### 2. Set Master Password
 
@@ -103,6 +104,23 @@ Click **Connect** to unlock the database. Then:
 | Zero Knowledge | Master password never leaves the browser |
 | Auto-lock | Session clears after 5 min inactivity |
 | Legacy Support | Auto-detects and migrates old 3DES format to AES-256 |
+| Google Drive | Data stored in appDataFolder — only this app can access the files |
+
+## Google Drive Setup
+
+To use Google Drive as a storage backend:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select an existing one)
+3. Enable the **Google Drive API** in **APIs & Services → Library**
+4. Go to **APIs & Services → Credentials** → **Create Credentials → OAuth Client ID**
+5. Select **Web application** as the application type
+6. Add your app's URL to **Authorized JavaScript origins** (e.g. `http://localhost:5173` for development, `https://yourdomain.com` for production)
+7. Copy the **Client ID** (format: `123456789.apps.googleusercontent.com`)
+8. In the app, create a new repository with type **Google Drive** and paste the Client ID
+9. On first connect, a Google OAuth popup will appear — grant access to the app data folder
+
+> **Note:** The app only requests the `drive.appdata` scope, which limits access to a hidden app-specific folder. Your other Google Drive files are never accessible to this app.
 
 ## Deployment
 
@@ -125,7 +143,8 @@ src/
 ├── App.vue              # Main layout (sidebar + data table)
 ├── crypto.ts            # AES-256-GCM encryption + PBKDF2
 ├── lib.ts               # Utilities (debounce, file save)
-├── FileSystemDriver.ts  # GitHub/WebDAV/LocalStorage adapters
+├── FileSystemDriver.ts  # GitHub/WebDAV/LocalStorage/Google Drive adapters
+├── GoogleDriveClient.ts  # GIS auth + Drive REST API (no gapi/SDK)
 ├── stores/
 │   ├── database.ts      # Database state + CRUD operations
 │   └── repos.ts         # Repository management

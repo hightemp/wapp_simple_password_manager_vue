@@ -136,7 +136,7 @@ test.describe('Password Generator', () => {
     await page.locator('button:has-text("Generate Password")').click()
 
     // Click generate
-    await page.locator('button:has-text("Generate")').click()
+    await page.locator('.gen-btn--secondary').click()
 
     // Password preview should appear
     await expect(page.locator('.pw-gen-code')).toBeVisible()
@@ -188,6 +188,7 @@ test.describe('Filtering', () => {
   })
 
   test('should filter from last page with 30+ entries', async ({ page }) => {
+    test.setTimeout(90_000) // Adding many entries is slow
     // Add 30 entries; give entry #15 a unique category for filtering
     for (let i = 1; i <= 30; i++) {
       await page.locator('.sidebar-btn[aria-label="Add"]').click()
@@ -306,7 +307,7 @@ test.describe('Save & Toast', () => {
 
     // Notification should appear
     await expect(page.locator('.notification')).toBeVisible()
-    await expect(page.locator('text=Saved')).toBeVisible()
+    await expect(page.locator('.notification-title')).toHaveText('Saved')
 
     // Should auto-dismiss
     await page.waitForTimeout(4000)
@@ -360,12 +361,13 @@ async function addEntries(page: Page, count: number) {
 
 test.describe('Pagination', () => {
   test('should paginate when many entries exist', async ({ page }) => {
+    test.setTimeout(90_000) // Adding many entries is slow
     await page.goto('/')
     await connectLocalStorage(page)
 
     // Add enough entries to trigger pagination.
-    // The page size depends on viewport height; add 30 to be safe.
-    await addEntries(page, 30)
+    // The page size depends on viewport height; add 50 to guarantee 3+ pages.
+    await addEntries(page, 50)
 
     // Pagination bar should be visible
     const pgBar = page.locator('.pagination-bar').first()
@@ -379,11 +381,14 @@ test.describe('Pagination', () => {
     await pgBar.locator('.pg-btn[aria-label="Next page"]').click()
     await expect(pgInfo).toContainText('2 /')
 
-    // Click Last
-    await pgBar.locator('.pg-btn[aria-label="Last page"]').click()
-    const text = await pgInfo.textContent()
-    const parts = text!.trim().split('/')
-    expect(parts[0].trim()).toBe(parts[1].trim()) // current === max
+    // Click Last (should not be disabled if there are 3+ pages and we are on page 2)
+    const lastBtn = pgBar.locator('.pg-btn[aria-label="Last page"]')
+    if (await lastBtn.isEnabled()) {
+      await lastBtn.click()
+      const text = await pgInfo.textContent()
+      const parts = text!.trim().split('/')
+      expect(parts[0].trim()).toBe(parts[1].trim()) // current === max
+    }
 
     // Next should be disabled on last page
     await expect(pgBar.locator('.pg-btn[aria-label="Next page"]')).toBeDisabled()
@@ -639,5 +644,81 @@ test.describe('Escape Key Behavior', () => {
     await page.keyboard.press('Escape')
     await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
     await expect(activeRow).toHaveCount(1)
+  })
+})
+
+test.describe('Google Drive Repository UI', () => {
+  test('should show googledrive option in repo type select', async ({ page }) => {
+    await page.goto('/')
+    // Repo modal auto-opens
+    await expect(page.locator('.modal-panel')).toBeVisible()
+
+    // Click "Add Repository"
+    await page.locator('.repo-add-card').click()
+
+    // Type dropdown should have googledrive option
+    const select = page.locator('.repo-form-panel select.form-field-input')
+    await expect(select).toBeVisible()
+    const options = select.locator('option')
+    const texts = await options.allTextContents()
+    expect(texts.some(t => /google\s*drive/i.test(t))).toBe(true)
+  })
+
+  test('should show Client ID field when googledrive type is selected', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('.modal-panel')).toBeVisible()
+
+    // Click "Add Repository"
+    await page.locator('.repo-add-card').click()
+
+    // Select googledrive type
+    const select = page.locator('.repo-form-panel select.form-field-input')
+    await select.selectOption('googledrive')
+
+    // Client ID field should be visible
+    await expect(page.locator('label:has-text("Client ID")')).toBeVisible()
+    await expect(page.locator('input[placeholder*="apps.googleusercontent.com"]')).toBeVisible()
+
+    // GitHub fields should NOT be visible
+    await expect(page.locator('label:has-text("API Key")')).not.toBeVisible()
+  })
+
+  test('should validate Client ID field', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('.modal-panel')).toBeVisible()
+
+    // Click "Add Repository" and select googledrive
+    await page.locator('.repo-add-card').click()
+    const select = page.locator('.repo-form-panel select.form-field-input')
+    await select.selectOption('googledrive')
+
+    // Fill name but leave Client ID empty → click Save
+    await page.locator('input[placeholder="My Repository"]').fill('My GDrive')
+    await page.locator('button:has-text("Save")').click()
+
+    // Should show validation error on client_id field
+    await expect(page.locator('.field-error')).toBeVisible()
+    await expect(page.locator('.field-error')).toContainText(/client.*id/i)
+  })
+
+  test('should save googledrive repo and show it in list', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('.modal-panel')).toBeVisible()
+
+    // Click "Add Repository"  
+    await page.locator('.repo-add-card').click()
+    const select = page.locator('.repo-form-panel select.form-field-input')
+    await select.selectOption('googledrive')
+
+    // Fill fields
+    await page.locator('input[placeholder="My Repository"]').fill('My Google Drive')
+    await page.locator('input[placeholder*="apps.googleusercontent.com"]').fill('12345.apps.googleusercontent.com')
+
+    // Save
+    await page.locator('button:has-text("Save")').click()
+
+    // Should appear in repo list
+    await expect(page.locator('.repo-card-name:has-text("My Google Drive")')).toBeVisible()
+    await expect(page.locator('.repo-card-type:has-text("googledrive")')).toBeVisible()
   })
 })

@@ -2,9 +2,10 @@ import { Octokit } from "@octokit/rest"
 import { createClient, WebDAVClient } from "webdav/web"
 import { encode, decode } from 'js-base64'
 import { fnEncrypt, fnDecrypt } from './crypto'
+import { ensureToken, findFile, readFile as gdriveReadFile, createFile as gdriveCreateFile, updateFile as gdriveUpdateFile } from './GoogleDriveClient'
 
 export interface RepoItem {
-  type: 'localstorage' | 'github' | 'webdav'
+  type: 'localstorage' | 'github' | 'webdav' | 'googledrive'
   name: string
   login?: string
   repo?: string
@@ -13,6 +14,7 @@ export interface RepoItem {
   username?: string
   password?: string
   need_save?: boolean
+  gdrive_client_id?: string
 }
 
 export interface ReadResult {
@@ -43,6 +45,9 @@ export class FileSystemDriver {
             this.fnInitWebdav()
         }
         if (oRepoItem.type == "localstorage") {
+        }
+        if (oRepoItem.type == "googledrive") {
+            // Auth is lazy — happens on first read/write
         }
     }
 
@@ -96,6 +101,9 @@ export class FileSystemDriver {
         if (this.oRepoItem.type == "webdav") {
             return this.fnReadFileWebdav(sFilePath)
         }
+        if (this.oRepoItem.type == "googledrive") {
+            return this.fnReadFileGoogleDrive(sFilePath)
+        }
         return Promise.reject(new Error(`Unknown repo type: ${this.oRepoItem.type}`))
     }
 
@@ -116,6 +124,9 @@ export class FileSystemDriver {
         }
         if (this.oRepoItem.type == "webdav") {
             return this.fnWriteFileWebdav(sFilePath, sData)
+        }
+        if (this.oRepoItem.type == "googledrive") {
+            return this.fnWriteFileGoogleDrive(sFilePath, sData)
         }
         return Promise.reject(new Error(`Unknown repo type: ${this.oRepoItem.type}`))
     }
@@ -222,5 +233,42 @@ export class FileSystemDriver {
 
     fnGetUpdateMessage(): string {
         return 'update: ' + new Date()
+    }
+
+    // ===============================================================
+    // Google Drive
+    // ===============================================================
+
+    async fnReadFileGoogleDrive(sFilePath: string): Promise<ReadResult> {
+        const clientId = this.oRepoItem.gdrive_client_id!
+        const token = await ensureToken(clientId)
+        const fileName = sFilePath.replace(/^\/+/, '')
+
+        const fileId = await findFile(token, fileName, clientId)
+        if (!fileId) {
+            throw new Error('Not Found')
+        }
+
+        const sData = await gdriveReadFile(token, fileId)
+        this.oSHA[sFilePath] = fileId
+        return { sData, sSHA: fileId }
+    }
+
+    async fnWriteFileGoogleDrive(sFilePath: string, sData: string): Promise<void> {
+        const clientId = this.oRepoItem.gdrive_client_id!
+        const token = await ensureToken(clientId)
+        const fileName = sFilePath.replace(/^\/+/, '')
+
+        let fileId = this.oSHA[sFilePath]
+        if (!fileId) {
+            fileId = await findFile(token, fileName, clientId) ?? undefined
+        }
+
+        if (fileId) {
+            await gdriveUpdateFile(token, fileId, sData)
+        } else {
+            const newId = await gdriveCreateFile(token, fileName, sData)
+            this.oSHA[sFilePath] = newId
+        }
     }
 }

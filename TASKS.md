@@ -304,6 +304,61 @@
 - [x] Сохранить скриншоты в `images/` (screenshot-light.png, screenshot-dark.png, screenshot-mobile.png)
 - [x] Вставить скриншоты в README.md с alt-текстом
 
+## 15. Google Drive Storage — appDataFolder
+
+Новое хранилище для зашифрованного файла базы данных на Google Drive (appDataFolder).
+Без `gapi`, без npm SDK — только Google Identity Services (GIS) + `fetch()` к Drive REST API v3.
+
+### 15.1 Модуль GoogleDriveClient (`src/GoogleDriveClient.ts`)
+- [x] Создать файл `src/GoogleDriveClient.ts` — изолированный модуль для работы с Google Drive
+- [x] Динамическая загрузка GIS-скрипта (`https://accounts.google.com/gsi/client`) с `loadGisScript()`
+- [x] `requestToken(clientId)` — инициализация `google.accounts.oauth2.initTokenClient()`, scope `drive.appdata`, возврат access_token через Promise
+- [x] `ensureToken(clientId)` — проверка срока жизни токена (expires_in − 5 мин), автопродление через тихий `requestAccessToken({ prompt: '' })`
+- [x] `findFile(token, fileName)` — `GET /drive/v3/files?spaces=appDataFolder&q=name='...'` → fileId | null
+- [x] `readFile(token, fileId)` — `GET /drive/v3/files/{id}?alt=media` → string
+- [x] `createFile(token, fileName, content)` — `POST /upload/drive/v3/files?uploadType=multipart`, parents: `['appDataFolder']`, multipart/related → fileId
+- [x] `updateFile(token, fileId, content)` — `PATCH /upload/drive/v3/files/{id}?uploadType=media` → void
+- [x] Обработка 401 (token expired) → автоматический retry после `ensureToken()`
+- [x] TypeScript-типы: `GTokenResponse`, `GTokenClient`, `GoogleDriveFile`
+
+### 15.2 Интеграция в FileSystemDriver
+- [x] Расширить `RepoItem.type`: добавить `'googledrive'`
+- [x] Добавить поле `gdrive_client_id?: string` в интерфейс `RepoItem`
+- [x] Добавить `fnReadFileGoogleDrive(path)` — ensureToken → findFile → readFile, кэш fileId в `oSHA`
+- [x] Добавить `fnWriteFileGoogleDrive(path, data)` — ensureToken → findFile/create/update, кэш fileId в `oSHA`
+- [x] Роутинг в `fnReadFile()` / `fnWriteFile()` — добавить ветку `if (type === 'googledrive')`
+- [x] При инициализации (`fnInit`) — не нужна синхронная работа, авторизация будет lazy при первом read/write
+
+### 15.3 UI — repo_window.vue
+- [x] Добавить `'googledrive'` в `<select>` типов репозитория
+- [x] Иконка для repo-card: `i-lucide-cloud` (или специфичная Google Drive иконка)
+- [x] Форма для типа `googledrive`: одно поле **Client ID** (обязательное)
+- [x] Валидация Client ID: непустое, содержит `.apps.googleusercontent.com`
+- [x] При нажатии «Connect» для googledrive — автоматически запрашивается OAuth-токен (popup), затем загрузка базы
+- [x] Надпись/подсказка: "Files are stored in the hidden appDataFolder — only this app can access them"
+
+### 15.4 Unit-тесты (Vitest)
+- [x] Тест GoogleDriveClient: mock `fetch()` + mock `google.accounts.oauth2` global
+  - `findFile` — возвращает fileId при наличии файла, null при отсутствии
+  - `readFile` — возвращает содержимое
+  - `createFile` — multipart POST, возвращает id
+  - `updateFile` — PATCH, не выбрасывает ошибку
+  - 401 retry: первый вызов 401, повторный — 200
+- [x] Тест FileSystemDriver googledrive: mock GoogleDriveClient
+  - `fnReadFile` / `fnWriteFile` с `type: 'googledrive'` роутят на правильные методы
+  - `fnReadFileCryptoJSON` / `fnWriteFileCryptoJSON` — encrypt/decrypt корректно
+- [x] Тест repo_window: googledrive форма показывает поле Client ID, валидация работает
+
+### 15.5 E2E тесты (Playwright)
+- [x] Тест: repo_window показывает Google Drive в выпадающем списке типов
+- [x] Тест: форма googledrive показывает поле Client ID при выборе типа
+- [x] Тест: валидация Client ID — ошибка при пустом поле
+
+### 15.6 Документация
+- [x] Обновить README.md: добавить Google Drive в Features и Usage
+- [x] Описать setup: создание OAuth Client ID в Google Cloud Console, добавление origins
+- [x] Добавить `GOOGLE_DRIVE_CLIENT_ID` в пример конфигурации
+
 ## 14. E2E тесты (Playwright)
 
 - [x] Установить Playwright: `npm install -D @playwright/test`, `npx playwright install chromium`
