@@ -7,7 +7,7 @@
         role="dialog"
         aria-modal="true"
         :aria-labelledby="titleId"
-        @keydown.esc="onEsc"
+        @keydown.esc.stop="onEsc"
         @mousedown.self="onOverlayClick"
         ref="overlayRef"
       >

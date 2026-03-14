@@ -550,3 +550,94 @@ test.describe('Mobile Viewport', () => {
     await expect(page.locator('text=Mobile Test')).toBeVisible()
   })
 })
+
+// ====== Helper: add one entry and return to grid ======
+async function addOneEntry(page: Page, name = 'TestEntry') {
+  await page.locator('.sidebar-btn[aria-label="Add"]').click()
+  await expect(page.locator('.modal-panel')).toBeVisible()
+  const inputs = page.locator('.modal-panel .form-field-input')
+  await inputs.nth(0).fill('Cat')
+  await inputs.nth(1).fill(name)
+  await inputs.nth(2).fill('user1')
+  await inputs.nth(3).fill('pass1')
+  await page.locator('button:has-text("Save")').click()
+  await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+}
+
+test.describe('Escape Key Behavior', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+    await addOneEntry(page, 'EscTest')
+  })
+
+  test('Escape deselects row when no modal is open', async ({ page }) => {
+    const row = page.locator('.grid-row:not(.grid-header)').first()
+    await row.click()
+    await expect(row).toHaveClass(/active/)
+
+    // Focus the grid and press Escape
+    await page.locator('.data-grid').focus()
+    await page.keyboard.press('Escape')
+
+    // Row should be deselected
+    await expect(row).not.toHaveClass(/active/)
+  })
+
+  test('Escape closes edit modal but keeps row selected', async ({ page }) => {
+    const row = page.locator('.grid-row:not(.grid-header)').first()
+    await row.click()
+    await expect(row).toHaveClass(/active/)
+
+    // Open edit modal via Enter
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.modal-panel')).toBeVisible()
+
+    // Press Escape to close the modal
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+
+    // Row should still be selected
+    await expect(row).toHaveClass(/active/)
+  })
+
+  test('Escape closes shortcuts modal but keeps row selected', async ({ page }) => {
+    const row = page.locator('.grid-row:not(.grid-header)').first()
+    await row.click()
+    await expect(row).toHaveClass(/active/)
+
+    // Open shortcuts modal via sidebar button
+    await page.locator('.sidebar-btn[aria-label="Keyboard Shortcuts"]').click()
+    await expect(page.locator('.modal-panel')).toBeVisible()
+
+    // Press Escape to close
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+
+    // Row should still be selected
+    await expect(row).toHaveClass(/active/)
+  })
+
+  test('Arrow select + Enter + Escape preserves selection', async ({ page }) => {
+    // Add a second entry
+    await addOneEntry(page, 'EscTest2')
+
+    // Use arrow key to select
+    await page.locator('.data-grid').focus()
+    await page.keyboard.press('ArrowDown')
+
+    const rows = page.locator('.grid-row:not(.grid-header)')
+    // One of the rows should be active
+    const activeRow = page.locator('.grid-row.active')
+    await expect(activeRow).toHaveCount(1)
+
+    // Open edit modal
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.modal-panel')).toBeVisible()
+
+    // Escape should close modal and keep selection
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+    await expect(activeRow).toHaveCount(1)
+  })
+})
