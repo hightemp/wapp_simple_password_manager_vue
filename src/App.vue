@@ -234,7 +234,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, useTemplateRef, provide, reactive } from 'vue'
+import { ref, computed, onMounted, onUnmounted, useTemplateRef, provide, reactive, nextTick } from 'vue'
 import { useDatabaseStore } from './stores/database'
 import { useReposStore } from './stores/repos'
 import { fnDebounce } from './lib'
@@ -294,6 +294,9 @@ const shortcuts = [
   { key: 'Ctrl + S', desc: 'Save all changes' },
   { key: 'Ctrl + N', desc: 'Add new entry' },
   { key: 'Ctrl + F', desc: 'Focus first filter' },
+  { key: '↑ / ↓', desc: 'Select previous / next entry' },
+  { key: '← / →', desc: 'Previous / next page' },
+  { key: 'Home / End', desc: 'First / last page' },
   { key: 'Delete', desc: 'Delete selected entry' },
   { key: 'Enter', desc: 'Edit selected entry' },
   { key: 'Escape', desc: 'Deselect / Close modal' },
@@ -427,6 +430,56 @@ function fnClickLeftMenu(oItem: { id: string }) {
 
 function fnItemClick(oRow: any) { oSelectedItem.value = oRow }
 
+function fnSelectNext() {
+  const rows = aSlicedRows.value
+  if (rows.length === 0) return
+  if (!oSelectedItem.value) {
+    // Nothing selected — select first on current page
+    oSelectedItem.value = rows[0]
+    return
+  }
+  const idx = rows.findIndex((r: any) => r.id === oSelectedItem.value?.id)
+  if (idx === -1) {
+    // Selected item is not on this page — select first
+    oSelectedItem.value = rows[0]
+  } else if (idx < rows.length - 1) {
+    // Move down within the page
+    oSelectedItem.value = rows[idx + 1]
+  } else if (iPage.value < iMaxPages.value) {
+    // At the bottom of the page — go to next page and select first row
+    fnNext()
+    nextTick(() => {
+      const newRows = aSlicedRows.value
+      if (newRows.length > 0) oSelectedItem.value = newRows[0]
+    })
+  }
+}
+
+function fnSelectPrev() {
+  const rows = aSlicedRows.value
+  if (rows.length === 0) return
+  if (!oSelectedItem.value) {
+    // Nothing selected — select last on current page
+    oSelectedItem.value = rows[rows.length - 1]
+    return
+  }
+  const idx = rows.findIndex((r: any) => r.id === oSelectedItem.value?.id)
+  if (idx === -1) {
+    // Selected item not on page — select last
+    oSelectedItem.value = rows[rows.length - 1]
+  } else if (idx > 0) {
+    // Move up within the page
+    oSelectedItem.value = rows[idx - 1]
+  } else if (iPage.value > 1) {
+    // At the top of the page — go to previous page and select last row
+    fnPrev()
+    nextTick(() => {
+      const newRows = aSlicedRows.value
+      if (newRows.length > 0) oSelectedItem.value = newRows[newRows.length - 1]
+    })
+  }
+}
+
 function fnDblItemClick() {
   if (oSelectedItem.value) {
     db.fnShowEditWindow({ sFormName: sTableName, oItem: oSelectedItem.value })
@@ -541,6 +594,35 @@ onMounted(() => {
     if (e.key === 'Escape') {
       oSelectedItem.value = null
       ctxMenu.show = false
+    }
+
+    // Arrow key navigation (only when no input/textarea is focused)
+    const bInputFocused = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'SELECT'
+    if (!bInputFocused && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        fnSelectNext()
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        fnSelectPrev()
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        fnNext()
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        fnPrev()
+      }
+      if (e.key === 'Home') {
+        e.preventDefault()
+        fnFirst()
+      }
+      if (e.key === 'End') {
+        e.preventDefault()
+        fnLast()
+      }
     }
   })
 
