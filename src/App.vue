@@ -71,7 +71,7 @@
 
       <!-- Data table -->
       <div class="table-scroll" ref="tableScrollRef">
-        <div class="data-grid" role="grid">
+        <div class="data-grid" role="grid" ref="dataGridRef" tabindex="0">
           <!-- Header -->
           <div class="grid-row grid-header" :style="gridStyle" role="row">
             <div
@@ -251,6 +251,7 @@ const repos = useReposStore()
 const file_selector = useTemplateRef('file_selector')
 const notifRef = ref<InstanceType<typeof NotificationToast> | null>(null)
 const tableScrollRef = ref<HTMLElement | null>(null)
+const dataGridRef = ref<HTMLElement | null>(null)
 
 // Provide notification globally
 provide('notify', (title: string, message?: string, type?: 'success' | 'error' | 'info') => {
@@ -428,7 +429,11 @@ function fnClickLeftMenu(oItem: { id: string }) {
   if (oItem.id === 'export') db.fnExportDatabase()
 }
 
-function fnItemClick(oRow: any) { oSelectedItem.value = oRow }
+function fnItemClick(oRow: any) {
+  oSelectedItem.value = oRow
+  // Focus the grid so keyboard navigation works
+  dataGridRef.value?.focus()
+}
 
 function fnSelectNext() {
   const rows = aSlicedRows.value
@@ -581,13 +586,15 @@ onMounted(() => {
       firstFilter?.focus()
     }
     if (e.key === 'Delete' && !e.ctrlKey && !e.altKey) {
-      // Only if no input is focused
-      if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+      const tag = document.activeElement?.tagName
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
         fnRemoveClick()
       }
     }
     if (e.key === 'Enter' && !e.ctrlKey && !e.altKey) {
-      if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+      const tag = document.activeElement?.tagName
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+        e.preventDefault()
         fnEditClick()
       }
     }
@@ -602,10 +609,12 @@ onMounted(() => {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         fnSelectNext()
+        dataGridRef.value?.focus()
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault()
         fnSelectPrev()
+        dataGridRef.value?.focus()
       }
       if (e.key === 'ArrowRight') {
         e.preventDefault()
@@ -804,6 +813,7 @@ onUnmounted(() => {
 
 .data-grid {
   min-width: 600px;
+  outline: none;
 }
 
 .grid-row {
