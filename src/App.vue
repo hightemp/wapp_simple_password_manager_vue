@@ -211,7 +211,7 @@
     </BaseModal>
 
     <!-- ===== Change Master Password Modal ===== -->
-    <BaseModal v-model="bShowChangePw" title="Change Master Password" size="sm" :closable="true">
+    <BaseModal v-model="bShowChangePw" title="Change Master Password" size="md" :closable="true">
       <div class="chpw-form">
         <p class="chpw-hint">The database will be re-encrypted with the new password and saved to all connected repositories.</p>
 
@@ -1288,6 +1288,47 @@ onUnmounted(() => {
   gap: var(--space-3);
 }
 
+.chpw-form .form-field {
+  margin-bottom: 0;
+}
+
+.chpw-form .form-field-label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--c-text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.chpw-form .form-field-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 var(--space-3);
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.chpw-form .form-field-input:focus {
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+.chpw-form .form-field-input[readonly] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.chpw-form .input-error {
+  border-color: var(--c-danger) !important;
+}
+.chpw-form .input-error:focus {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+}
+
 .chpw-hint {
   font-size: var(--text-sm);
   color: var(--c-text-secondary);
@@ -1305,6 +1346,50 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   color: var(--c-danger);
   font-size: var(--text-sm);
+}
+
+/* ===== Modal shared (footer & buttons) ===== */
+.modal-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.action-btn--primary {
+  background: var(--c-accent);
+  color: white;
+}
+.action-btn--primary:hover:not(:disabled) {
+  background: var(--c-accent-hover);
+}
+
+.action-btn--ghost {
+  background: transparent;
+  color: var(--c-text-secondary);
+  border: 1px solid var(--c-border);
+}
+.action-btn--ghost:hover:not(:disabled) {
+  background: var(--c-bg-hover);
+  color: var(--c-text);
 }
 
 @keyframes spin {

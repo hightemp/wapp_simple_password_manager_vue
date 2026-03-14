@@ -30,6 +30,6 @@ export default defineConfig({
     command: 'npx vite --port 5173',
     url: 'http://localhost:5173',
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    timeout: 120_000,
   },
 })

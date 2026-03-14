@@ -163,3 +163,15 @@ export async function updateFile(
   })
   if (!res.ok) throw new Error(`Drive update: ${res.status}`)
 }
+
+export async function deleteFile(
+  token: string,
+  fileId: string,
+): Promise<void> {
+  const res = await fetch(`${DRIVE_API}/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  // 204 No Content is the success response for DELETE
+  if (!res.ok && res.status !== 204) throw new Error(`Drive delete: ${res.status}`)
+}

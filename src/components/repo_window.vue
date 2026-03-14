@@ -47,13 +47,18 @@
               <div class="repo-card-name">{{ oItem.name }}</div>
               <div class="repo-card-type">{{ oItem.type }}</div>
             </div>
-            <div class="repo-card-actions" v-if="oItem.type !== 'localstorage'">
-              <button class="repo-icon-btn" @click.stop="fnEditRepo(iIndex)" title="Edit" aria-label="Edit repository">
-                <div class="i-lucide-pencil" />
+            <div class="repo-card-actions">
+              <button class="repo-icon-btn repo-icon-btn--danger" @click.stop="fnClearStorageConfirm(iIndex)" title="Clear storage data" aria-label="Clear storage">
+                <div class="i-lucide-database-zap" />
               </button>
-              <button class="repo-icon-btn repo-icon-btn--danger" @click.stop="fnRemoveRepo(iIndex)" title="Delete" aria-label="Delete repository">
-                <div class="i-lucide-trash-2" />
-              </button>
+              <template v-if="oItem.type !== 'localstorage'">
+                <button class="repo-icon-btn" @click.stop="fnEditRepo(iIndex)" title="Edit" aria-label="Edit repository">
+                  <div class="i-lucide-pencil" />
+                </button>
+                <button class="repo-icon-btn repo-icon-btn--danger" @click.stop="fnRemoveRepo(iIndex)" title="Delete" aria-label="Delete repository">
+                  <div class="i-lucide-trash-2" />
+                </button>
+              </template>
             </div>
           </template>
         </div>
@@ -146,6 +151,62 @@
       </div>
     </div>
 
+    <!-- === Clear storage confirmation === -->
+    <div class="repo-form-panel" v-else-if="iClearStorageIndex !== null">
+      <h3 class="form-panel-title">Clear Storage</h3>
+
+      <div class="clear-storage-warning">
+        <div class="clear-storage-warning-icon"><div class="i-lucide-alert-triangle" /></div>
+        <div>
+          <p class="clear-storage-warning-text">
+            This will permanently delete the encrypted database from
+            <strong>{{ sClearStorageName }}</strong>.
+            This action cannot be undone.
+          </p>
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label class="form-field-label">Type <strong>{{ sClearStorageName }}</strong> to confirm</label>
+        <input
+          type="text"
+          class="form-field-input"
+          v-model="sClearStorageConfirm"
+          :placeholder="sClearStorageName"
+          autocomplete="off"
+        />
+      </div>
+
+      <Transition name="error-slide">
+        <div v-if="sClearStorageError" class="connection-error" style="margin-bottom: var(--space-3)">
+          <div class="connection-error-icon"><div class="i-lucide-alert-circle" /></div>
+          <div class="connection-error-body">
+            <span class="connection-error-text">{{ sClearStorageError }}</span>
+          </div>
+        </div>
+      </Transition>
+
+      <Transition name="error-slide">
+        <div v-if="sClearStorageSuccess" class="clear-storage-success">
+          <div class="i-lucide-check-circle" />
+          <span>{{ sClearStorageSuccess }}</span>
+        </div>
+      </Transition>
+
+      <div class="form-actions">
+        <button class="action-btn action-btn--ghost" @click="fnCancelClearStorage">Cancel</button>
+        <button
+          class="action-btn action-btn--danger"
+          @click="fnClearStorage"
+          :disabled="bClearingStorage || sClearStorageConfirm !== sClearStorageName"
+        >
+          <div v-if="bClearingStorage" class="i-lucide-loader-2 spin" />
+          <div v-else class="i-lucide-database-zap" />
+          {{ bClearingStorage ? 'Clearing...' : 'Clear Storage' }}
+        </button>
+      </div>
+    </div>
+
     <!-- Empty state when no edit -->
     <div class="repo-form-panel repo-form-empty" v-else>
       <div class="i-lucide-mouse-pointer-click empty-icon" />
@@ -173,9 +234,10 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue'
-import { useDatabaseStore } from '../stores/database'
+import { useDatabaseStore, DATABASE_PATH } from '../stores/database'
 import { useReposStore } from '../stores/repos'
 import { fnSaveFile } from '../lib'
+import { FileSystemDriver } from '../FileSystemDriver'
 import BaseModal from './BaseModal.vue'
 
 const db = useDatabaseStore()
@@ -213,6 +275,17 @@ const bShowApiKey = ref(false)
 const bShowWdPw = ref(false)
 const formErrors = reactive<Record<string, string>>({})
 
+// Clear storage state
+const iClearStorageIndex = ref<number | null>(null)
+const sClearStorageConfirm = ref('')
+const sClearStorageError = ref('')
+const sClearStorageSuccess = ref('')
+const bClearingStorage = ref(false)
+const sClearStorageName = computed(() => {
+  if (iClearStorageIndex.value === null) return ''
+  const oRepo = aReposList.value[iClearStorageIndex.value]
+  return oRepo?.name ?? ''
+})
 function fnValidateRepo(): boolean {
   // Clear previous errors
   for (const k in formErrors) delete formErrors[k]
@@ -270,6 +343,7 @@ function fnSaveRepo() {
 }
 
 function fnNewRepo() {
+  iClearStorageIndex.value = null
   iEditIndex.value = -1
   sFormName.value = ''
   sFormLogin.value = ''
@@ -283,6 +357,7 @@ function fnNewRepo() {
 }
 
 function fnEditRepo(iIndex: number) {
+  iClearStorageIndex.value = null
   iEditIndex.value = iIndex
   const oO = aReposList.value[iEditIndex.value]
   sFormName.value = oO.name
@@ -312,6 +387,43 @@ function fnAcceptRepo() {
 
 function fnExport() {
   fnSaveFile('database', JSON.stringify(repos.aAllRepos))
+}
+
+// === Clear Storage ===
+function fnClearStorageConfirm(iIndex: number) {
+  iEditIndex.value = null
+  iClearStorageIndex.value = iIndex
+  sClearStorageConfirm.value = ''
+  sClearStorageError.value = ''
+  sClearStorageSuccess.value = ''
+  bClearingStorage.value = false
+}
+
+function fnCancelClearStorage() {
+  iClearStorageIndex.value = null
+  sClearStorageConfirm.value = ''
+  sClearStorageError.value = ''
+  sClearStorageSuccess.value = ''
+}
+
+async function fnClearStorage() {
+  if (iClearStorageIndex.value === null) return
+  if (sClearStorageConfirm.value !== sClearStorageName.value) return
+
+  bClearingStorage.value = true
+  sClearStorageError.value = ''
+  sClearStorageSuccess.value = ''
+
+  try {
+    const oRepo = aReposList.value[iClearStorageIndex.value]
+    const oFS = new FileSystemDriver(oRepo)
+    await oFS.fnDeleteFile(DATABASE_PATH)
+    sClearStorageSuccess.value = `Storage data for "${oRepo.name}" has been deleted.`
+  } catch (e: any) {
+    sClearStorageError.value = 'Failed to clear storage: ' + (e?.message || e)
+  } finally {
+    bClearingStorage.value = false
+  }
 }
 </script>
 
@@ -726,4 +838,48 @@ function fnExport() {
   margin-top: var(--space-1);
   line-height: 1.4;
 }
+
+/* === Clear storage === */
+.clear-storage-warning {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: color-mix(in srgb, var(--c-danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-danger) 25%, transparent);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+}
+
+.clear-storage-warning-icon {
+  color: var(--c-danger);
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.clear-storage-warning-text {
+  font-size: var(--text-sm);
+  color: var(--c-text);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.clear-storage-success {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--c-success, #22c55e) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-success, #22c55e) 30%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--c-success, #22c55e);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-3);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin { animation: spin 1s linear infinite; }
 </style>

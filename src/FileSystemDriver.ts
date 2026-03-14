@@ -2,7 +2,7 @@ import { Octokit } from "@octokit/rest"
 import { createClient, WebDAVClient } from "webdav/web"
 import { encode, decode } from 'js-base64'
 import { fnEncrypt, fnDecrypt } from './crypto'
-import { ensureToken, findFile, readFile as gdriveReadFile, createFile as gdriveCreateFile, updateFile as gdriveUpdateFile } from './GoogleDriveClient'
+import { ensureToken, findFile, readFile as gdriveReadFile, createFile as gdriveCreateFile, updateFile as gdriveUpdateFile, deleteFile as gdriveDeleteFile } from './GoogleDriveClient'
 
 export interface RepoItem {
   type: 'localstorage' | 'github' | 'webdav' | 'googledrive'
@@ -233,6 +233,90 @@ export class FileSystemDriver {
 
     fnGetUpdateMessage(): string {
         return 'update: ' + new Date()
+    }
+
+    // ===============================================================
+    // Delete file
+    // ===============================================================
+
+    fnDeleteFile(sFilePath: string): Promise<void> {
+        if (this.oRepoItem.type == 'localstorage') {
+            return this.fnDeleteFileLocalStorage(sFilePath)
+        }
+        if (this.oRepoItem.type == 'github') {
+            return this.fnDeleteFileGithub(sFilePath)
+        }
+        if (this.oRepoItem.type == 'webdav') {
+            return this.fnDeleteFileWebdav(sFilePath)
+        }
+        if (this.oRepoItem.type == 'googledrive') {
+            return this.fnDeleteFileGoogleDrive(sFilePath)
+        }
+        return Promise.reject(new Error(`Unknown repo type: ${this.oRepoItem.type}`))
+    }
+
+    fnDeleteFileLocalStorage(sFilePath: string): Promise<void> {
+        return new Promise((fnResolv) => {
+            localStorage.removeItem(sFilePath)
+            fnResolv()
+        })
+    }
+
+    fnDeleteFileGithub(sFilePath: string): Promise<void> {
+        return new Promise(async (fnResolv, fnReject) => {
+            const oR = this.oRepoItem
+            sFilePath = sFilePath.replace(/^\/+/, '')
+            try {
+                // Need SHA to delete — fetch it first if not cached
+                let sSHA = this.oSHA[sFilePath]
+                if (!sSHA) {
+                    const { data }: any = await this.octokit!.rest.repos.getContent({
+                        owner: oR.login!,
+                        repo: oR.repo!,
+                        path: sFilePath,
+                    })
+                    sSHA = data.sha
+                }
+                await this.octokit!.rest.repos.deleteFile({
+                    owner: oR.login!,
+                    repo: oR.repo!,
+                    path: sFilePath,
+                    sha: sSHA,
+                    message: 'delete: ' + new Date(),
+                })
+                delete this.oSHA[sFilePath]
+                fnResolv()
+            } catch (oE) {
+                fnReject(oE)
+            }
+        })
+    }
+
+    fnDeleteFileWebdav(sFilePath: string): Promise<void> {
+        return new Promise(async (fnResolv, fnReject) => {
+            try {
+                await this.webdav!.deleteFile(sFilePath)
+                fnResolv()
+            } catch (oE) {
+                fnReject(oE)
+            }
+        })
+    }
+
+    async fnDeleteFileGoogleDrive(sFilePath: string): Promise<void> {
+        const clientId = this.oRepoItem.gdrive_client_id!
+        const token = await ensureToken(clientId)
+        const fileName = sFilePath.replace(/^\/+/, '')
+
+        let fileId = this.oSHA[sFilePath]
+        if (!fileId) {
+            fileId = await findFile(token, fileName, clientId) ?? undefined
+        }
+
+        if (fileId) {
+            await gdriveDeleteFile(token, fileId)
+            delete this.oSHA[sFilePath]
+        }
     }
 
     // ===============================================================
