@@ -165,3 +165,5 @@ src/
 ## License
 
 MIT
+
+![](https://asdertasd.site/counter/wapp_simple_password_manager_vue)
