@@ -88,6 +88,12 @@ export const useReposStore = defineStore('repos', () => {
     oReposFileSystem.value[iIndex] = markRaw(new FileSystemDriver(aRepos[iIndex]))
   }
 
+  function fnReposImport(aData) {
+    const aFiltered = aData.filter((o) => o.type !== 'localstorage')
+    aReposList.value = aFiltered
+    localStorage.setItem('aReposList', JSON.stringify(aReposList.value))
+  }
+
   function fnSetNeedSaveToCurrentRepo() {
     const aRepos = aAllRepos.value
     aRepos[iSelectedRepoIndex.value].need_save = true
@@ -106,6 +112,7 @@ export const useReposStore = defineStore('repos', () => {
     fnReposSelect,
     fnReposClean,
     fnReposUpdate,
+    fnReposImport,
     fnCreateFileSystem,
     fnSetNeedSaveToCurrentRepo,
   }

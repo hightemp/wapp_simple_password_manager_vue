@@ -217,8 +217,12 @@
   <template #footer>
     <div class="modal-footer-row">
       <div class="footer-left">
+        <input type="file" ref="repo_file_selector" class="sr-only" accept=".json" @change="fnFileImportChange" />
         <button class="action-btn action-btn--ghost action-btn--sm" @click="fnExport" title="Export repositories">
           <div class="i-lucide-download" /> Export
+        </button>
+        <button class="action-btn action-btn--ghost action-btn--sm" @click="fnTriggerImport" title="Import repositories">
+          <div class="i-lucide-upload" /> Import
         </button>
         <button class="action-btn action-btn--danger action-btn--sm" @click="fnCleanRepo" title="Clear all">
           <div class="i-lucide-trash-2" /> Clear
@@ -234,6 +238,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue'
+import { useTemplateRef } from 'vue'
 import { useDatabaseStore, DATABASE_PATH } from '../stores/database'
 import { useReposStore } from '../stores/repos'
 import { fnSaveFile } from '../lib'
@@ -388,6 +393,33 @@ function fnAcceptRepo() {
 function fnExport() {
   fnSaveFile('database', JSON.stringify(repos.aAllRepos))
 }
+
+const repo_file_selector = useTemplateRef('repo_file_selector')
+
+function fnTriggerImport() {
+  repo_file_selector.value?.click()
+}
+
+function fnImportRepos() {
+  const el = repo_file_selector.value as HTMLInputElement
+  const oFile = el.files?.[0]
+  if (!oFile) return
+  const reader = new FileReader()
+  reader.readAsText(oFile)
+  reader.onload = () => {
+    try {
+      const aData = JSON.parse(reader.result as string)
+      if (Array.isArray(aData)) {
+        repos.fnReposImport(aData)
+      }
+    } catch (_) {
+      /* ignore invalid JSON */
+    }
+    el.value = ''
+  }
+}
+
+function fnFileImportChange() { fnImportRepos() }
 
 // === Clear Storage ===
 function fnClearStorageConfirm(iIndex: number) {
