@@ -1,35 +1,45 @@
 import { defineStore } from 'pinia'
 import { ref, computed, markRaw } from 'vue'
-import { FileSystemDriver } from '../FileSystemDriver'
+import { FileSystemDriver, type RepoItem } from '@/services/FileSystemDriver'
+
+// localStorage key kept as-is so existing users don't lose their saved repos
+const REPOS_STORAGE_KEY = 'aReposList'
 
 export const useReposStore = defineStore('repos', () => {
   // --- state ---
-  const aDefaultRepoList = ref([
+  const defaultRepos = ref<RepoItem[]>([
     { type: 'localstorage', name: 'Local Storage' },
   ])
-  const aReposList = ref([])
-  const oReposFileSystem = ref({})
-  const iSelectedRepoIndex = ref(null)
+  const userRepos = ref<RepoItem[]>([])
+  const fileSystems = ref<Record<number, FileSystemDriver>>({})
+  const selectedIndex = ref<number | null>(null)
 
   // --- getters ---
-  const aAllRepos = computed(() =>
-    aDefaultRepoList.value.concat(aReposList.value)
+  const allRepos = computed(() =>
+    defaultRepos.value.concat(userRepos.value)
   )
-  const oCurrentRepo = computed(() =>
-    aAllRepos.value[iSelectedRepoIndex.value]
+  const currentRepo = computed(() =>
+    selectedIndex.value === null ? undefined : allRepos.value[selectedIndex.value]
   )
-  const oCurrentFileSystem = computed(() =>
-    oReposFileSystem.value[iSelectedRepoIndex.value]
+  const currentFileSystem = computed(() =>
+    selectedIndex.value === null ? undefined : fileSystems.value[selectedIndex.value]
   )
 
   // --- actions ---
-  function fnLoadRepos() {
+  function persist() {
+    localStorage.setItem(REPOS_STORAGE_KEY, JSON.stringify(userRepos.value))
+  }
+
+  /**
+   * Load saved repos from localStorage. A repo can also be passed via URL
+   * query params (?type=...&name=...) — it is added or updated by name.
+   */
+  function loadRepos() {
     try {
-      aReposList.value = JSON.parse(localStorage.getItem('aReposList') || '[]')
-      const parsedUrl = new URL(window.location)
-      const { searchParams } = parsedUrl
+      userRepos.value = JSON.parse(localStorage.getItem(REPOS_STORAGE_KEY) || '[]')
+      const { searchParams } = new URL(window.location.href)
       if (searchParams.get('type')) {
-        const oNewItem = {
+        const repoFromUrl = {
           type: searchParams.get('type'),
           name: searchParams.get('name'),
           login: searchParams.get('login'),
@@ -38,82 +48,78 @@ export const useReposStore = defineStore('repos', () => {
           url: searchParams.get('url'),
           username: searchParams.get('username'),
           password: searchParams.get('password'),
-        }
-        const oItem = aReposList.value.find((oI) => oI.name == oNewItem.name)
-        if (oItem) {
-          for (const sK in oNewItem) {
-            oItem[sK] = oNewItem[sK]
-          }
+        } as RepoItem
+        const existing = userRepos.value.find((repo) => repo.name == repoFromUrl.name)
+        if (existing) {
+          Object.assign(existing, repoFromUrl)
         } else {
-          aReposList.value.push(oNewItem)
+          userRepos.value.push(repoFromUrl)
         }
-        localStorage.setItem('aReposList', JSON.stringify(aReposList.value))
+        persist()
       }
     } catch (_) {
       /* ignore */
     }
   }
 
-  function fnReposRemove(iIndex) {
-    aReposList.value.splice(iIndex - aDefaultRepoList.value.length, 1)
-    localStorage.setItem('aReposList', JSON.stringify(aReposList.value))
+  function removeRepo(index: number) {
+    userRepos.value.splice(index - defaultRepos.value.length, 1)
+    persist()
   }
 
-  function fnReposSelect(iIndex) {
-    iSelectedRepoIndex.value = iIndex
-    const aRepos = aAllRepos.value
-    for (const oRepo of aRepos) {
-      oRepo.need_save = false
+  function selectRepo(index: number) {
+    selectedIndex.value = index
+    const repos = allRepos.value
+    for (const repo of repos) {
+      repo.needsSave = false
     }
-    aRepos[0].need_save = true
-    aRepos[iSelectedRepoIndex.value].need_save = true
+    repos[0].needsSave = true
+    repos[index].needsSave = true
   }
 
-  function fnReposClean() {
-    aReposList.value = []
-    localStorage.setItem('aReposList', JSON.stringify(aReposList.value))
+  function clearRepos() {
+    userRepos.value = []
+    persist()
   }
 
-  function fnReposUpdate({ iIndex, oObj }) {
-    if (iIndex == -1) {
-      aReposList.value.push(oObj)
+  /** Add a new repo (index = -1) or replace the repo at `index` */
+  function saveRepo(index: number, repo: RepoItem) {
+    if (index == -1) {
+      userRepos.value.push(repo)
     } else {
-      aReposList.value.splice(iIndex - aDefaultRepoList.value.length, 1, oObj)
+      userRepos.value.splice(index - defaultRepos.value.length, 1, repo)
     }
-    localStorage.setItem('aReposList', JSON.stringify(aReposList.value))
+    persist()
   }
 
-  function fnCreateFileSystem(iIndex) {
-    const aRepos = aAllRepos.value
-    oReposFileSystem.value[iIndex] = markRaw(new FileSystemDriver(aRepos[iIndex]))
+  function createFileSystem(index: number) {
+    fileSystems.value[index] = markRaw(new FileSystemDriver(allRepos.value[index]))
   }
 
-  function fnReposImport(aData) {
-    const aFiltered = aData.filter((o) => o.type !== 'localstorage')
-    aReposList.value = aFiltered
-    localStorage.setItem('aReposList', JSON.stringify(aReposList.value))
+  function importRepos(repos: RepoItem[]) {
+    userRepos.value = repos.filter((repo) => repo.type !== 'localstorage')
+    persist()
   }
 
-  function fnSetNeedSaveToCurrentRepo() {
-    const aRepos = aAllRepos.value
-    aRepos[iSelectedRepoIndex.value].need_save = true
+  function markCurrentRepoForSave() {
+    if (currentRepo.value) currentRepo.value.needsSave = true
   }
 
   return {
-    aDefaultRepoList,
-    aReposList,
-    oReposFileSystem,
-    iSelectedRepoIndex,
-    aAllRepos,
-    oCurrentRepo,
-    oCurrentFileSystem,
-    fnLoadRepos,
-    fnReposRemove,
-    fnReposSelect,
-    fnReposClean,
-    fnReposUpdate,
-    fnReposImport,
-    fnCreateFileSystem,
-    fnSetNeedSaveToCurrentRepo,
+    defaultRepos,
+    userRepos,
+    fileSystems,
+    selectedIndex,
+    allRepos,
+    currentRepo,
+    currentFileSystem,
+    loadRepos,
+    removeRepo,
+    selectRepo,
+    clearRepos,
+    saveRepo,
+    importRepos,
+    createFileSystem,
+    markCurrentRepoForSave,
   }
 })

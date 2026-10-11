@@ -1,16 +1,37 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { fnSaveFile } from '../lib'
+import { ref } from 'vue'
+import { downloadJson } from '@/utils/download'
+import type { FileSystemDriver } from '@/services/FileSystemDriver'
 import { useReposStore } from './repos'
 
 export const DATABASE_PATH = 'passwords-database'
-export const DATABASE_UPDATE_TIMEOUT = 30000
+
+export interface Entry {
+  id?: number
+  [field: string]: any
+}
+
+export interface Column {
+  label: string
+  type: string
+}
+
+export interface Table {
+  last_index: number
+  page: number
+  data: Entry[]
+  selection_id: number | null
+  filter: Record<string, string>
+}
+
+export type Database = Record<string, Table>
 
 export const useDatabaseStore = defineStore('database', () => {
   // --- state ---
-  const sPassword = ref('')
+  const masterPassword = ref('')
 
-  const oStructure = ref({
+  // Column definitions per table
+  const structure = ref<Record<string, Record<string, Column>>>({
     table: {
       category: { label: 'Category', type: 'text' },
       name: { label: 'Name', type: 'text' },
@@ -21,7 +42,8 @@ export const useDatabaseStore = defineStore('database', () => {
     },
   })
 
-  const oDatabase = ref({
+  // Persisted (encrypted) database — field names are part of the file format
+  const database = ref<Database>({
     table: {
       last_index: 0,
       page: 1,
@@ -38,7 +60,8 @@ export const useDatabaseStore = defineStore('database', () => {
     },
   })
 
-  const oForms = ref({
+  // Values of the edit form fields per form
+  const forms = ref<Record<string, Record<string, any>>>({
     table: {
       category: '',
       name: '',
@@ -49,220 +72,192 @@ export const useDatabaseStore = defineStore('database', () => {
     },
   })
 
-  const oEditWindow = ref({
+  const editWindows = ref<Record<string, { isOpen: boolean; item: Entry }>>({
     table: {
-      window_show: false,
-      edit_item: {},
+      isOpen: false,
+      item: {},
     },
   })
 
-  const iUnsavedChanges = ref(0)
+  const unsavedChanges = ref(0)
+
+  // UI state that database actions need to access
+  const isLoading = ref(false)
+  const isRepoWindowOpen = ref(true)
+  const connectionError = ref('')
 
   // --- getters ---
-  function fnGetFieldValue(sFormName, sFieldName) {
-    return oForms.value[sFormName][sFieldName]
+  function getFormField(formName: string, fieldName: string) {
+    return forms.value[formName][fieldName]
   }
 
-  // --- mutations (now actions) ---
-  function fnUpdateFormVar({ sFormName, sFieldName, mV }) {
-    oForms.value[sFormName][sFieldName] = mV
+  // --- actions ---
+  function setFormField(formName: string, fieldName: string, value: unknown) {
+    forms.value[formName][fieldName] = value
   }
 
-  function fnUpdateDatabaseVar({ sTableName, sVarName, mV }) {
-    oDatabase.value[sTableName][sVarName] = mV
+  function setFilter(tableName: string, fieldName: string, value: string) {
+    database.value[tableName].filter[fieldName] = value
   }
 
-  function fnUpdateFilter({ sTableName, sName, sV }) {
-    oDatabase.value[sTableName].filter[sName] = sV
+  function setDatabase(newDatabase: Database) {
+    database.value = newDatabase
   }
 
-  function fnUpdateDatabase(oNewDatabase) {
-    oDatabase.value = oNewDatabase
-  }
-
-  function fnShowEditWindow({ sFormName, oItem }) {
-    oEditWindow.value[sFormName].window_show = true
-    oEditWindow.value[sFormName].edit_item = oItem
-    for (const sN in oForms.value[sFormName]) {
-      if (sN in oItem) {
-        oForms.value[sFormName][sN] = oItem[sN]
-      } else {
-        oForms.value[sFormName][sN] = ''
-      }
+  function openEditWindow(formName: string, item: Entry) {
+    editWindows.value[formName].isOpen = true
+    editWindows.value[formName].item = item
+    for (const fieldName in forms.value[formName]) {
+      forms.value[formName][fieldName] = fieldName in item ? item[fieldName] : ''
     }
   }
 
-  function fnHideEditWindow(sFormName) {
-    oEditWindow.value[sFormName].window_show = false
+  function closeEditWindow(formName: string) {
+    editWindows.value[formName].isOpen = false
   }
 
-  function fnEditWindowSave({ sTableName, sFormName }) {
-    for (const sN in oForms.value[sFormName]) {
-      oEditWindow.value[sFormName].edit_item[sN] = oForms.value[sFormName][sN]
+  /** Copy form values into the edited item; new items get an id and are appended to the table */
+  function saveEditWindow(tableName: string, formName: string) {
+    const item = editWindows.value[formName].item
+    for (const fieldName in forms.value[formName]) {
+      item[fieldName] = forms.value[formName][fieldName]
     }
-    if (!oEditWindow.value[sFormName].edit_item.id) {
-      oEditWindow.value[sFormName].edit_item.id = ++oDatabase.value[sTableName].last_index
-      oDatabase.value[sTableName].data.push(oEditWindow.value[sFormName].edit_item)
+    if (!item.id) {
+      item.id = ++database.value[tableName].last_index
+      database.value[tableName].data.push(item)
     }
-    iUnsavedChanges.value++
+    unsavedChanges.value++
   }
 
-  function fnRemoveFromTable({ sTableName, oItem }) {
-    oDatabase.value[sTableName].data = oDatabase.value[sTableName].data.filter(
-      (oI) => oI.id != oItem.id
+  function removeEntry(tableName: string, entry: Entry) {
+    database.value[tableName].data = database.value[tableName].data.filter(
+      (other) => other.id != entry.id
     )
-    iUnsavedChanges.value++
+    unsavedChanges.value++
   }
 
-  // --- async actions ---
-  function fnExportDatabase() {
-    fnSaveFile('passwords-database', JSON.stringify(oDatabase.value, null, 4))
+  function exportDatabase() {
+    downloadJson('passwords-database', JSON.stringify(database.value, null, 4))
   }
 
-  function fnImportDatabase(sData) {
-    fnUpdateDatabase(JSON.parse(sData))
+  function importDatabase(json: string) {
+    setDatabase(JSON.parse(json))
   }
 
-  function fnPrepareRepo() {
+  function connectToCurrentRepo() {
     const repos = useReposStore()
-    repos.fnCreateFileSystem(repos.iSelectedRepoIndex)
-    repos.fnSetNeedSaveToCurrentRepo()
-    fnLoadDatabase()
+    repos.createFileSystem(repos.selectedIndex!)
+    repos.markCurrentRepoForSave()
+    loadDatabase()
   }
 
-  function fnSaveToAllDatabase() {
+  function saveToAllRepos() {
     const repos = useReposStore()
-    const aPromises: Promise<void>[] = []
-    for (const iIndex in repos.aAllRepos) {
-      const oRepo = repos.aAllRepos[iIndex]
-      if (oRepo.need_save) {
-        if (!repos.oReposFileSystem[iIndex]) {
-          repos.fnCreateFileSystem(iIndex)
+    const saves: Promise<void>[] = []
+    repos.allRepos.forEach((repo, index) => {
+      if (repo.needsSave) {
+        if (!repos.fileSystems[index]) {
+          repos.createFileSystem(index)
         }
-        aPromises.push(fnSaveDatabase({ oFileSystem: repos.oReposFileSystem[iIndex] }))
+        saves.push(saveDatabase(repos.fileSystems[index]))
       }
-    }
-    return Promise.all(aPromises)
+    })
+    return Promise.all(saves)
   }
 
-  function fnSaveCurrentDatabase() {
-    const repos = useReposStore()
-    fnSaveDatabase({ oFileSystem: repos.oCurrentFileSystem })
-  }
-
-  function fnSaveDatabase({ oFileSystem }) {
-    return oFileSystem
-      .fnWriteFileCryptoJSON(DATABASE_PATH, oDatabase.value, sPassword.value)
+  function saveDatabase(fileSystem: FileSystemDriver) {
+    return fileSystem
+      .writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
       .then(() => {
-        iUnsavedChanges.value = 0
+        unsavedChanges.value = 0
       })
       .catch(() => {
-        oFileSystem.fnReadFile(DATABASE_PATH).then(() => {
-          return oFileSystem
-            .fnWriteFileCryptoJSON(DATABASE_PATH, oDatabase.value, sPassword.value)
+        // Retry once after re-reading the file (refreshes cached SHA / file id)
+        fileSystem.readFile(DATABASE_PATH).then(() => {
+          return fileSystem
+            .writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
             .then(() => {
-              iUnsavedChanges.value = 0
+              unsavedChanges.value = 0
             })
         })
       })
   }
 
-  function fnLoadDatabase() {
-    const repos = useReposStore()
-    sConnectionError.value = ''
-    bShowLoader.value = true
-    repos.oCurrentFileSystem
-      .fnReadFileCryptoJSON(DATABASE_PATH, sPassword.value)
-      .then((mData) => {
-        if (!mData) throw 'Cannot destructure property'
-        fnUpdateDatabase(mData)
-        bShowLoader.value = false
+  function showConnectionError(message: string) {
+    isLoading.value = false
+    connectionError.value = message
+    isRepoWindowOpen.value = true
+  }
+
+  function loadDatabase() {
+    const fileSystem = useReposStore().currentFileSystem!
+    connectionError.value = ''
+    isLoading.value = true
+    fileSystem
+      .readEncryptedJson(DATABASE_PATH, masterPassword.value)
+      .then((data) => {
+        if (!data) throw 'Cannot destructure property'
+        setDatabase(data as Database)
+        isLoading.value = false
       })
-      .catch((oE) => {
-        const sErr = oE + ''
+      .catch((error: unknown) => {
+        const message = error + ''
         // Wrong password — decryption produces invalid data
         if (
-          sErr.match(/Malformed UTF-8 data/) ||
-          sErr.match(/SyntaxError/) ||
-          sErr.match(/Unexpected token/) ||
-          sErr.match(/JSON\.parse/)
+          message.match(/Malformed UTF-8 data/) ||
+          message.match(/SyntaxError/) ||
+          message.match(/Unexpected token/) ||
+          message.match(/JSON\.parse/)
         ) {
-          bShowLoader.value = false
-          sConnectionError.value = 'Incorrect password. Please check your master password and try again.'
-          bShowRepoWindow.value = true
+          showConnectionError('Incorrect password. Please check your master password and try again.')
           return
         }
         // No database yet — create new one
         if (
-          sErr.match(/Cannot destructure property/) ||
-          sErr.match(/Not Found/)
+          message.match(/Cannot destructure property/) ||
+          message.match(/Not Found/)
         ) {
-          repos.oCurrentFileSystem
-            .fnWriteFileCryptoJSON(DATABASE_PATH, oDatabase.value, sPassword.value)
+          fileSystem
+            .writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
             .then(() => {
-              repos.oCurrentFileSystem
-                .fnReadFileCryptoJSON(DATABASE_PATH, sPassword.value)
-                .then((mData) => {
-                  fnUpdateDatabase(mData)
-                  bShowLoader.value = false
+              fileSystem
+                .readEncryptedJson(DATABASE_PATH, masterPassword.value)
+                .then((data) => {
+                  setDatabase(data as Database)
+                  isLoading.value = false
                 })
-                .catch(() => {
-                  bShowLoader.value = false
-                  sConnectionError.value = 'Failed to read the newly created database.'
-                  bShowRepoWindow.value = true
-                })
+                .catch(() => showConnectionError('Failed to read the newly created database.'))
             })
-            .catch(() => {
-              bShowLoader.value = false
-              sConnectionError.value = 'Failed to create new database.'
-              bShowRepoWindow.value = true
-            })
+            .catch(() => showConnectionError('Failed to create new database.'))
           return
         }
-        // Unknown error
-        bShowLoader.value = false
-        sConnectionError.value = 'Connection failed: ' + sErr
-        bShowRepoWindow.value = true
+        showConnectionError('Connection failed: ' + message)
       })
   }
 
-  function fnDropDatabase() {
-    localStorage.setItem(DATABASE_PATH, null)
-  }
-
-  // UI state that database actions need to access
-  const bShowLoader = ref(false)
-  const bShowSaveToast = ref(false)
-  const bShowRepoWindow = ref(true)
-  const sConnectionError = ref('')
-
   return {
-    sPassword,
-    oStructure,
-    oDatabase,
-    oForms,
-    oEditWindow,
-    iUnsavedChanges,
-    bShowLoader,
-    bShowSaveToast,
-    bShowRepoWindow,
-    sConnectionError,
-    fnGetFieldValue,
-    fnUpdateFormVar,
-    fnUpdateDatabaseVar,
-    fnUpdateFilter,
-    fnUpdateDatabase,
-    fnShowEditWindow,
-    fnHideEditWindow,
-    fnEditWindowSave,
-    fnRemoveFromTable,
-    fnExportDatabase,
-    fnImportDatabase,
-    fnPrepareRepo,
-    fnSaveToAllDatabase,
-    fnSaveCurrentDatabase,
-    fnSaveDatabase,
-    fnLoadDatabase,
-    fnDropDatabase,
+    masterPassword,
+    structure,
+    database,
+    forms,
+    editWindows,
+    unsavedChanges,
+    isLoading,
+    isRepoWindowOpen,
+    connectionError,
+    getFormField,
+    setFormField,
+    setFilter,
+    setDatabase,
+    openEditWindow,
+    closeEditWindow,
+    saveEditWindow,
+    removeEntry,
+    exportDatabase,
+    importDatabase,
+    connectToCurrentRepo,
+    saveToAllRepos,
+    saveDatabase,
+    loadDatabase,
   }
 })

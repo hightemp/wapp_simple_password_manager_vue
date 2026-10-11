@@ -29,19 +29,20 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import type { NotificationType } from '@/composables/useNotify'
 
 interface Notification {
   id: number
   title: string
   message?: string
-  type: 'success' | 'error' | 'info'
+  type: NotificationType
   duration: number
 }
 
 const notifications = ref<Notification[]>([])
 let nextId = 0
 
-function show(title: string, message = '', type: 'success' | 'error' | 'info' = 'success', duration = 3000) {
+function show(title: string, message = '', type: NotificationType = 'success', duration = 3000) {
   const id = ++nextId
   notifications.value.push({ id, title, message, type, duration })
   setTimeout(() => dismiss(id), duration)

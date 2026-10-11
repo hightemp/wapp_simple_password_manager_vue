@@ -45,7 +45,7 @@ function cleanupGoogleMock() {
 }
 
 // === Test suite ===
-describe('GoogleDriveClient', () => {
+describe('googleDrive', () => {
   let gd
 
   beforeEach(async () => {
@@ -53,7 +53,7 @@ describe('GoogleDriveClient', () => {
     cleanupGoogleMock()
     setupGoogleMock()
     // Dynamic import so each test gets a fresh module
-    gd = await import('../GoogleDriveClient')
+    gd = await import('../../services/googleDrive')
   })
 
   afterEach(() => {

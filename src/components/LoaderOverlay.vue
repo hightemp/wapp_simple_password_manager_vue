@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="loader">
-      <div v-if="bShowLoader" class="loader-overlay">
+      <div v-if="db.isLoading" class="loader-overlay">
         <div class="loader-spinner">
           <svg class="spinner-svg" viewBox="0 0 50 50">
             <circle class="spinner-circle" cx="25" cy="25" r="20" fill="none" stroke-width="4" />
@@ -13,11 +13,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useDatabaseStore } from '../stores/database'
+import { useDatabaseStore } from '@/stores/database'
 
 const db = useDatabaseStore()
-const bShowLoader = computed(() => db.bShowLoader)
 </script>
 
 <style scoped>

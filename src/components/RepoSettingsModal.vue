@@ -1,5 +1,5 @@
 <template>
-<BaseModal v-model="bShowRepoWindow" title="Repository Settings" size="lg" :persistent="true" :closable="false">
+<BaseModal v-model="db.isRepoWindowOpen" title="Repository Settings" size="lg" :persistent="true" :closable="false">
   <div class="repo-layout">
     <!-- === Left: repo list === -->
     <div class="repo-list-panel">
@@ -10,18 +10,18 @@
           type="password"
           class="master-input"
           placeholder="Master Password"
-          v-model="sPassword"
+          v-model="db.masterPassword"
           autocomplete="off"
         />
       </div>
 
       <!-- Connection error -->
       <Transition name="error-slide">
-        <div v-if="sConnectionError" class="connection-error">
+        <div v-if="db.connectionError" class="connection-error">
           <div class="connection-error-icon"><div class="i-lucide-alert-circle" /></div>
           <div class="connection-error-body">
-            <span class="connection-error-text">{{ sConnectionError }}</span>
-            <button class="connection-error-close" @click="sConnectionError = ''" aria-label="Dismiss">
+            <span class="connection-error-text">{{ db.connectionError }}</span>
+            <button class="connection-error-close" @click="db.connectionError = ''" aria-label="Dismiss">
               <div class="i-lucide-x" />
             </button>
           </div>
@@ -31,31 +31,31 @@
       <!-- Repo list -->
       <div class="repo-list">
         <div
-          v-for="(oItem, iIndex) in aReposList"
-          :key="iIndex"
-          :class="['repo-card', { active: iSelectedRepoIndex === iIndex }]"
-          @click="fnSelectRepo(iIndex)"
+          v-for="(repo, index) in repos.allRepos"
+          :key="index"
+          :class="['repo-card', { active: repos.selectedIndex === index }]"
+          @click="repos.selectRepo(index)"
         >
-          <template v-if="oItem">
+          <template v-if="repo">
             <div class="repo-card-icon">
-              <div v-if="oItem.type === 'github'" class="i-lucide-github" />
-              <div v-else-if="oItem.type === 'webdav'" class="i-lucide-cloud" />
-              <div v-else-if="oItem.type === 'googledrive'" class="i-lucide-hard-drive" />
+              <div v-if="repo.type === 'github'" class="i-lucide-github" />
+              <div v-else-if="repo.type === 'webdav'" class="i-lucide-cloud" />
+              <div v-else-if="repo.type === 'googledrive'" class="i-lucide-hard-drive" />
               <div v-else class="i-lucide-hard-drive" />
             </div>
             <div class="repo-card-info">
-              <div class="repo-card-name">{{ oItem.name }}</div>
-              <div class="repo-card-type">{{ oItem.type }}</div>
+              <div class="repo-card-name">{{ repo.name }}</div>
+              <div class="repo-card-type">{{ repo.type }}</div>
             </div>
             <div class="repo-card-actions">
-              <button class="repo-icon-btn repo-icon-btn--danger" @click.stop="fnClearStorageConfirm(iIndex)" title="Clear storage data" aria-label="Clear storage">
+              <button class="repo-icon-btn repo-icon-btn--danger" @click.stop="openClearStorage(index)" title="Clear storage data" aria-label="Clear storage">
                 <div class="i-lucide-database-zap" />
               </button>
-              <template v-if="oItem.type !== 'localstorage'">
-                <button class="repo-icon-btn" @click.stop="fnEditRepo(iIndex)" title="Edit" aria-label="Edit repository">
+              <template v-if="repo.type !== 'localstorage'">
+                <button class="repo-icon-btn" @click.stop="editRepo(index)" title="Edit" aria-label="Edit repository">
                   <div class="i-lucide-pencil" />
                 </button>
-                <button class="repo-icon-btn repo-icon-btn--danger" @click.stop="fnRemoveRepo(iIndex)" title="Delete" aria-label="Delete repository">
+                <button class="repo-icon-btn repo-icon-btn--danger" @click.stop="repos.removeRepo(index)" title="Delete" aria-label="Delete repository">
                   <div class="i-lucide-trash-2" />
                 </button>
               </template>
@@ -64,7 +64,7 @@
         </div>
 
         <!-- Add button -->
-        <button class="repo-add-card" @click="fnNewRepo">
+        <button class="repo-add-card" @click="newRepo">
           <div class="i-lucide-plus" />
           <span>Add Repository</span>
         </button>
@@ -72,12 +72,12 @@
     </div>
 
     <!-- === Right: edit form === -->
-    <div class="repo-form-panel" v-if="iEditIndex !== null">
-      <h3 class="form-panel-title">{{ iEditIndex === -1 ? 'New Repository' : 'Edit Repository' }}</h3>
+    <div class="repo-form-panel" v-if="editIndex !== null">
+      <h3 class="form-panel-title">{{ editIndex === -1 ? 'New Repository' : 'Edit Repository' }}</h3>
 
       <div class="form-field">
         <label class="form-field-label">Type</label>
-        <select class="form-field-input" v-model="sFromType">
+        <select class="form-field-input" v-model="form.type">
           <option value="github">GitHub</option>
           <option value="webdav">WebDAV</option>
           <option value="googledrive">Google Drive</option>
@@ -86,73 +86,73 @@
 
       <div class="form-field">
         <label class="form-field-label">Name</label>
-        <input type="text" :class="['form-field-input', { 'input-error': formErrors.name }]" v-model="sFormName" placeholder="My Repository" autocomplete="off" />
-        <span v-if="formErrors.name" class="field-error">{{ formErrors.name }}</span>
+        <input type="text" :class="['form-field-input', { 'input-error': errors.name }]" v-model="form.name" placeholder="My Repository" autocomplete="off" />
+        <span v-if="errors.name" class="field-error">{{ errors.name }}</span>
       </div>
 
-      <template v-if="sFromType === 'github'">
+      <template v-if="form.type === 'github'">
         <div class="form-field">
           <label class="form-field-label">Login</label>
-          <input type="text" :class="['form-field-input', { 'input-error': formErrors.login }]" v-model="sFormLogin" placeholder="username" autocomplete="off" />
-          <span v-if="formErrors.login" class="field-error">{{ formErrors.login }}</span>
+          <input type="text" :class="['form-field-input', { 'input-error': errors.login }]" v-model="form.login" placeholder="username" autocomplete="off" />
+          <span v-if="errors.login" class="field-error">{{ errors.login }}</span>
         </div>
         <div class="form-field">
           <label class="form-field-label">Repository</label>
-          <input type="text" :class="['form-field-input', { 'input-error': formErrors.repo }]" v-model="sFormRepo" placeholder="repo-name" autocomplete="off" />
-          <span v-if="formErrors.repo" class="field-error">{{ formErrors.repo }}</span>
+          <input type="text" :class="['form-field-input', { 'input-error': errors.repo }]" v-model="form.repo" placeholder="repo-name" autocomplete="off" />
+          <span v-if="errors.repo" class="field-error">{{ errors.repo }}</span>
         </div>
         <div class="form-field">
           <label class="form-field-label">API Key</label>
           <div class="input-with-toggle">
-            <input :type="bShowApiKey ? 'text' : 'password'" :class="['form-field-input', { 'input-error': formErrors.key }]" v-model="sFormKey" placeholder="ghp_..." autocomplete="off" />
-            <button class="input-toggle-btn" @click="bShowApiKey = !bShowApiKey" type="button" :aria-label="bShowApiKey ? 'Hide' : 'Show'">
-              <div :class="bShowApiKey ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
+            <input :type="showApiKey ? 'text' : 'password'" :class="['form-field-input', { 'input-error': errors.key }]" v-model="form.key" placeholder="ghp_..." autocomplete="off" />
+            <button class="input-toggle-btn" @click="showApiKey = !showApiKey" type="button" :aria-label="showApiKey ? 'Hide' : 'Show'">
+              <div :class="showApiKey ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
             </button>
           </div>
-          <span v-if="formErrors.key" class="field-error">{{ formErrors.key }}</span>
+          <span v-if="errors.key" class="field-error">{{ errors.key }}</span>
         </div>
       </template>
 
-      <template v-if="sFromType === 'webdav'">
+      <template v-if="form.type === 'webdav'">
         <div class="form-field">
           <label class="form-field-label">URL</label>
-          <input type="url" :class="['form-field-input', { 'input-error': formErrors.url }]" v-model="sFormURL" placeholder="https://..." autocomplete="off" />
-          <span v-if="formErrors.url" class="field-error">{{ formErrors.url }}</span>
+          <input type="url" :class="['form-field-input', { 'input-error': errors.url }]" v-model="form.url" placeholder="https://..." autocomplete="off" />
+          <span v-if="errors.url" class="field-error">{{ errors.url }}</span>
         </div>
         <div class="form-field">
           <label class="form-field-label">Username</label>
-          <input type="text" :class="['form-field-input', { 'input-error': formErrors.username }]" v-model="sFormUsername" autocomplete="off" />
-          <span v-if="formErrors.username" class="field-error">{{ formErrors.username }}</span>
+          <input type="text" :class="['form-field-input', { 'input-error': errors.username }]" v-model="form.username" autocomplete="off" />
+          <span v-if="errors.username" class="field-error">{{ errors.username }}</span>
         </div>
         <div class="form-field">
           <label class="form-field-label">Password</label>
           <div class="input-with-toggle">
-            <input :type="bShowWdPw ? 'text' : 'password'" :class="['form-field-input', { 'input-error': formErrors.password }]" v-model="sFormPassword" autocomplete="off" />
-            <button class="input-toggle-btn" @click="bShowWdPw = !bShowWdPw" type="button" :aria-label="bShowWdPw ? 'Hide' : 'Show'">
-              <div :class="bShowWdPw ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
+            <input :type="showWebdavPassword ? 'text' : 'password'" :class="['form-field-input', { 'input-error': errors.password }]" v-model="form.password" autocomplete="off" />
+            <button class="input-toggle-btn" @click="showWebdavPassword = !showWebdavPassword" type="button" :aria-label="showWebdavPassword ? 'Hide' : 'Show'">
+              <div :class="showWebdavPassword ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
             </button>
           </div>
-          <span v-if="formErrors.password" class="field-error">{{ formErrors.password }}</span>
+          <span v-if="errors.password" class="field-error">{{ errors.password }}</span>
         </div>
       </template>
 
-      <template v-if="sFromType === 'googledrive'">
+      <template v-if="form.type === 'googledrive'">
         <div class="form-field">
           <label class="form-field-label">Client ID</label>
-          <input type="text" :class="['form-field-input', { 'input-error': formErrors.gdrive_client_id }]" v-model="sFormGDriveClientId" placeholder="123456.apps.googleusercontent.com" autocomplete="off" />
-          <span v-if="formErrors.gdrive_client_id" class="field-error">{{ formErrors.gdrive_client_id }}</span>
+          <input type="text" :class="['form-field-input', { 'input-error': errors.gdrive_client_id }]" v-model="form.gdrive_client_id" placeholder="123456.apps.googleusercontent.com" autocomplete="off" />
+          <span v-if="errors.gdrive_client_id" class="field-error">{{ errors.gdrive_client_id }}</span>
         </div>
         <p class="gdrive-hint">Files are stored in the hidden appDataFolder — only this app can access them.</p>
       </template>
 
       <div class="form-actions">
-        <button class="action-btn action-btn--ghost" @click="fnCancelRepo">Cancel</button>
-        <button class="action-btn action-btn--primary" @click="fnSaveRepo">Save</button>
+        <button class="action-btn action-btn--ghost" @click="cancelEdit">Cancel</button>
+        <button class="action-btn action-btn--primary" @click="saveRepo">Save</button>
       </div>
     </div>
 
     <!-- === Clear storage confirmation === -->
-    <div class="repo-form-panel" v-else-if="iClearStorageIndex !== null">
+    <div class="repo-form-panel" v-else-if="clearIndex !== null">
       <h3 class="form-panel-title">Clear Storage</h3>
 
       <div class="clear-storage-warning">
@@ -160,49 +160,49 @@
         <div>
           <p class="clear-storage-warning-text">
             This will permanently delete the encrypted database from
-            <strong>{{ sClearStorageName }}</strong>.
+            <strong>{{ clearRepoName }}</strong>.
             This action cannot be undone.
           </p>
         </div>
       </div>
 
       <div class="form-field">
-        <label class="form-field-label">Type <strong>{{ sClearStorageName }}</strong> to confirm</label>
+        <label class="form-field-label">Type <strong>{{ clearRepoName }}</strong> to confirm</label>
         <input
           type="text"
           class="form-field-input"
-          v-model="sClearStorageConfirm"
-          :placeholder="sClearStorageName"
+          v-model="clearConfirmText"
+          :placeholder="clearRepoName"
           autocomplete="off"
         />
       </div>
 
       <Transition name="error-slide">
-        <div v-if="sClearStorageError" class="connection-error" style="margin-bottom: var(--space-3)">
+        <div v-if="clearError" class="connection-error" style="margin-bottom: var(--space-3)">
           <div class="connection-error-icon"><div class="i-lucide-alert-circle" /></div>
           <div class="connection-error-body">
-            <span class="connection-error-text">{{ sClearStorageError }}</span>
+            <span class="connection-error-text">{{ clearError }}</span>
           </div>
         </div>
       </Transition>
 
       <Transition name="error-slide">
-        <div v-if="sClearStorageSuccess" class="clear-storage-success">
+        <div v-if="clearSuccess" class="clear-storage-success">
           <div class="i-lucide-check-circle" />
-          <span>{{ sClearStorageSuccess }}</span>
+          <span>{{ clearSuccess }}</span>
         </div>
       </Transition>
 
       <div class="form-actions">
-        <button class="action-btn action-btn--ghost" @click="fnCancelClearStorage">Cancel</button>
+        <button class="action-btn action-btn--ghost" @click="cancelClearStorage">Cancel</button>
         <button
           class="action-btn action-btn--danger"
-          @click="fnClearStorage"
-          :disabled="bClearingStorage || sClearStorageConfirm !== sClearStorageName"
+          @click="clearStorage"
+          :disabled="isClearing || clearConfirmText !== clearRepoName"
         >
-          <div v-if="bClearingStorage" class="i-lucide-loader-2 spin" />
+          <div v-if="isClearing" class="i-lucide-loader-2 spin" />
           <div v-else class="i-lucide-database-zap" />
-          {{ bClearingStorage ? 'Clearing...' : 'Clear Storage' }}
+          {{ isClearing ? 'Clearing...' : 'Clear Storage' }}
         </button>
       </div>
     </div>
@@ -217,18 +217,18 @@
   <template #footer>
     <div class="modal-footer-row">
       <div class="footer-left">
-        <input type="file" ref="repo_file_selector" class="sr-only" accept=".json" @change="fnFileImportChange" />
-        <button class="action-btn action-btn--ghost action-btn--sm" @click="fnExport" title="Export repositories">
+        <input type="file" ref="importInput" class="sr-only" accept=".json" @change="importRepos" />
+        <button class="action-btn action-btn--ghost action-btn--sm" @click="exportRepos" title="Export repositories">
           <div class="i-lucide-download" /> Export
         </button>
-        <button class="action-btn action-btn--ghost action-btn--sm" @click="fnTriggerImport" title="Import repositories">
+        <button class="action-btn action-btn--ghost action-btn--sm" @click="importInput?.click()" title="Import repositories">
           <div class="i-lucide-upload" /> Import
         </button>
-        <button class="action-btn action-btn--danger action-btn--sm" @click="fnCleanRepo" title="Clear all">
+        <button class="action-btn action-btn--danger action-btn--sm" @click="repos.clearRepos()" title="Clear all">
           <div class="i-lucide-trash-2" /> Clear
         </button>
       </div>
-      <button class="action-btn action-btn--primary" @click="fnAcceptRepo">
+      <button class="action-btn action-btn--primary" @click="connect">
         <div class="i-lucide-log-in" /> Connect
       </button>
     </div>
@@ -237,224 +237,184 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
-import { useTemplateRef } from 'vue'
-import { useDatabaseStore, DATABASE_PATH } from '../stores/database'
-import { useReposStore } from '../stores/repos'
-import { fnSaveFile } from '../lib'
-import { FileSystemDriver } from '../FileSystemDriver'
+import { ref, reactive, computed, useTemplateRef } from 'vue'
+import { useDatabaseStore, DATABASE_PATH } from '@/stores/database'
+import { useReposStore } from '@/stores/repos'
+import { downloadJson } from '@/utils/download'
+import { FileSystemDriver, type RepoItem, type RepoType } from '@/services/FileSystemDriver'
 import BaseModal from './BaseModal.vue'
 
 const db = useDatabaseStore()
 const repos = useReposStore()
 
-const bShowRepoWindow = computed({
-  get: () => db.bShowRepoWindow,
-  set: (v) => { db.bShowRepoWindow = v },
+// --- Repo edit form ---
+// null = form hidden, -1 = new repo, otherwise index in repos.allRepos
+const editIndex = ref<number | null>(null)
+const form = reactive({
+  type: 'github' as RepoType,
+  name: '',
+  login: '',
+  repo: '',
+  key: '',
+  url: '',
+  username: '',
+  password: '',
+  gdrive_client_id: '',
 })
+const errors = reactive<Record<string, string>>({})
+const showApiKey = ref(false)
+const showWebdavPassword = ref(false)
 
-const sPassword = computed({
-  get: () => db.sPassword,
-  set: (v) => { db.sPassword = v },
-})
+// --- Clear storage ---
+const clearIndex = ref<number | null>(null)
+const clearConfirmText = ref('')
+const clearError = ref('')
+const clearSuccess = ref('')
+const isClearing = ref(false)
+const clearRepoName = computed(() =>
+  clearIndex.value === null ? '' : repos.allRepos[clearIndex.value]?.name ?? ''
+)
 
-const sConnectionError = computed({
-  get: () => db.sConnectionError,
-  set: (v) => { db.sConnectionError = v },
-})
+function validateForm(): boolean {
+  for (const key in errors) delete errors[key]
 
-const iSelectedRepoIndex = computed(() => repos.iSelectedRepoIndex)
-const aReposList = computed(() => repos.aAllRepos)
-
-const iEditIndex = ref<number | null>(null)
-const sFormLogin = ref('')
-const sFormRepo = ref('')
-const sFormKey = ref('')
-const sFormURL = ref('')
-const sFromType = ref('github')
-const sFormName = ref('')
-const sFormUsername = ref('')
-const sFormPassword = ref('')
-const sFormGDriveClientId = ref('')
-const bShowApiKey = ref(false)
-const bShowWdPw = ref(false)
-const formErrors = reactive<Record<string, string>>({})
-
-// Clear storage state
-const iClearStorageIndex = ref<number | null>(null)
-const sClearStorageConfirm = ref('')
-const sClearStorageError = ref('')
-const sClearStorageSuccess = ref('')
-const bClearingStorage = ref(false)
-const sClearStorageName = computed(() => {
-  if (iClearStorageIndex.value === null) return ''
-  const oRepo = aReposList.value[iClearStorageIndex.value]
-  return oRepo?.name ?? ''
-})
-function fnValidateRepo(): boolean {
-  // Clear previous errors
-  for (const k in formErrors) delete formErrors[k]
-
-  if (!sFormName.value.trim()) {
-    formErrors.name = 'Name is required'
+  if (!form.name.trim()) {
+    errors.name = 'Name is required'
   }
 
-  if (sFromType.value === 'github') {
-    if (!sFormLogin.value.trim()) formErrors.login = 'Login is required'
-    if (!sFormRepo.value.trim()) formErrors.repo = 'Repository is required'
-    if (!sFormKey.value.trim()) {
-      formErrors.key = 'API Key is required'
-    } else if (!/^(ghp_|github_pat_)/.test(sFormKey.value.trim())) {
-      formErrors.key = 'API Key should start with ghp_ or github_pat_'
+  if (form.type === 'github') {
+    if (!form.login.trim()) errors.login = 'Login is required'
+    if (!form.repo.trim()) errors.repo = 'Repository is required'
+    if (!form.key.trim()) {
+      errors.key = 'API Key is required'
+    } else if (!/^(ghp_|github_pat_)/.test(form.key.trim())) {
+      errors.key = 'API Key should start with ghp_ or github_pat_'
     }
   }
 
-  if (sFromType.value === 'webdav') {
-    if (!sFormURL.value.trim()) {
-      formErrors.url = 'URL is required'
+  if (form.type === 'webdav') {
+    if (!form.url.trim()) {
+      errors.url = 'URL is required'
     } else {
-      try { new URL(sFormURL.value.trim()) } catch { formErrors.url = 'Invalid URL format' }
+      try { new URL(form.url.trim()) } catch { errors.url = 'Invalid URL format' }
     }
-    if (!sFormUsername.value.trim()) formErrors.username = 'Username is required'
-    if (!sFormPassword.value.trim()) formErrors.password = 'Password is required'
+    if (!form.username.trim()) errors.username = 'Username is required'
+    if (!form.password.trim()) errors.password = 'Password is required'
   }
 
-  if (sFromType.value === 'googledrive') {
-    if (!sFormGDriveClientId.value.trim()) {
-      formErrors.gdrive_client_id = 'Client ID is required'
-    } else if (!sFormGDriveClientId.value.includes('.apps.googleusercontent.com')) {
-      formErrors.gdrive_client_id = 'Client ID must contain .apps.googleusercontent.com'
+  if (form.type === 'googledrive') {
+    if (!form.gdrive_client_id.trim()) {
+      errors.gdrive_client_id = 'Client ID is required'
+    } else if (!form.gdrive_client_id.includes('.apps.googleusercontent.com')) {
+      errors.gdrive_client_id = 'Client ID must contain .apps.googleusercontent.com'
     }
   }
 
-  return Object.keys(formErrors).length === 0
+  return Object.keys(errors).length === 0
 }
 
-function fnSaveRepo() {
-  if (!fnValidateRepo()) return
-  const oObj = {
-    name: sFormName.value,
-    login: sFormLogin.value,
-    repo: sFormRepo.value,
-    key: sFormKey.value,
-    type: sFromType.value,
-    url: sFormURL.value,
-    username: sFormUsername.value,
-    password: sFormPassword.value,
-    gdrive_client_id: sFormGDriveClientId.value,
-  }
-  repos.fnReposUpdate({ iIndex: iEditIndex.value, oObj })
-  iEditIndex.value = null
+function fillForm(repo: Partial<RepoItem>) {
+  form.type = repo.type ?? 'github'
+  form.name = repo.name ?? ''
+  form.login = repo.login ?? ''
+  form.repo = repo.repo ?? ''
+  form.key = repo.key ?? ''
+  form.url = repo.url ?? ''
+  form.username = repo.username ?? ''
+  form.password = repo.password ?? ''
+  form.gdrive_client_id = repo.gdrive_client_id ?? ''
 }
 
-function fnNewRepo() {
-  iClearStorageIndex.value = null
-  iEditIndex.value = -1
-  sFormName.value = ''
-  sFormLogin.value = ''
-  sFormRepo.value = ''
-  sFormKey.value = ''
-  sFromType.value = 'github'
-  sFormURL.value = ''
-  sFormUsername.value = ''
-  sFormPassword.value = ''
-  sFormGDriveClientId.value = ''
+function newRepo() {
+  clearIndex.value = null
+  editIndex.value = -1
+  fillForm({})
 }
 
-function fnEditRepo(iIndex: number) {
-  iClearStorageIndex.value = null
-  iEditIndex.value = iIndex
-  const oO = aReposList.value[iEditIndex.value]
-  sFormName.value = oO.name
-  sFormLogin.value = oO.login
-  sFormRepo.value = oO.repo
-  sFormKey.value = oO.key
-  sFromType.value = oO.type
-  sFormURL.value = oO.url
-  sFormUsername.value = oO.username
-  sFormPassword.value = oO.password
-  sFormGDriveClientId.value = oO.gdrive_client_id || ''
+function editRepo(index: number) {
+  clearIndex.value = null
+  editIndex.value = index
+  fillForm(repos.allRepos[index])
 }
 
-function fnRemoveRepo(iIndex: number) { repos.fnReposRemove(iIndex) }
-function fnSelectRepo(iIndex: number) { repos.fnReposSelect(iIndex) }
-function fnCleanRepo() { repos.fnReposClean() }
-function fnCancelRepo() { iEditIndex.value = null }
+function saveRepo() {
+  if (!validateForm()) return
+  repos.saveRepo(editIndex.value!, { ...form })
+  editIndex.value = null
+}
 
-function fnAcceptRepo() {
-  if (!aReposList.value[iSelectedRepoIndex.value]) {
+function cancelEdit() {
+  editIndex.value = null
+}
+
+function connect() {
+  if (!repos.currentRepo) {
     return alert('Please select a repository')
   }
-  sConnectionError.value = ''
-  db.bShowRepoWindow = false
-  db.fnPrepareRepo()
+  db.connectionError = ''
+  db.isRepoWindowOpen = false
+  db.connectToCurrentRepo()
 }
 
-function fnExport() {
-  fnSaveFile('database', JSON.stringify(repos.aAllRepos))
+// --- Export / import repo list ---
+const importInput = useTemplateRef<HTMLInputElement>('importInput')
+
+function exportRepos() {
+  downloadJson('database', JSON.stringify(repos.allRepos))
 }
 
-const repo_file_selector = useTemplateRef('repo_file_selector')
-
-function fnTriggerImport() {
-  repo_file_selector.value?.click()
-}
-
-function fnImportRepos() {
-  const el = repo_file_selector.value as HTMLInputElement
-  const oFile = el.files?.[0]
-  if (!oFile) return
+function importRepos() {
+  const input = importInput.value!
+  const file = input.files?.[0]
+  if (!file) return
   const reader = new FileReader()
-  reader.readAsText(oFile)
+  reader.readAsText(file)
   reader.onload = () => {
     try {
-      const aData = JSON.parse(reader.result as string)
-      if (Array.isArray(aData)) {
-        repos.fnReposImport(aData)
+      const data = JSON.parse(reader.result as string)
+      if (Array.isArray(data)) {
+        repos.importRepos(data)
       }
     } catch (_) {
       /* ignore invalid JSON */
     }
-    el.value = ''
+    input.value = ''
   }
 }
 
-function fnFileImportChange() { fnImportRepos() }
-
-// === Clear Storage ===
-function fnClearStorageConfirm(iIndex: number) {
-  iEditIndex.value = null
-  iClearStorageIndex.value = iIndex
-  sClearStorageConfirm.value = ''
-  sClearStorageError.value = ''
-  sClearStorageSuccess.value = ''
-  bClearingStorage.value = false
+// --- Clear storage ---
+function openClearStorage(index: number) {
+  editIndex.value = null
+  clearIndex.value = index
+  clearConfirmText.value = ''
+  clearError.value = ''
+  clearSuccess.value = ''
+  isClearing.value = false
 }
 
-function fnCancelClearStorage() {
-  iClearStorageIndex.value = null
-  sClearStorageConfirm.value = ''
-  sClearStorageError.value = ''
-  sClearStorageSuccess.value = ''
+function cancelClearStorage() {
+  clearIndex.value = null
+  clearConfirmText.value = ''
+  clearError.value = ''
+  clearSuccess.value = ''
 }
 
-async function fnClearStorage() {
-  if (iClearStorageIndex.value === null) return
-  if (sClearStorageConfirm.value !== sClearStorageName.value) return
+async function clearStorage() {
+  if (clearIndex.value === null) return
+  if (clearConfirmText.value !== clearRepoName.value) return
 
-  bClearingStorage.value = true
-  sClearStorageError.value = ''
-  sClearStorageSuccess.value = ''
+  isClearing.value = true
+  clearError.value = ''
+  clearSuccess.value = ''
 
   try {
-    const oRepo = aReposList.value[iClearStorageIndex.value]
-    const oFS = new FileSystemDriver(oRepo)
-    await oFS.fnDeleteFile(DATABASE_PATH)
-    sClearStorageSuccess.value = `Storage data for "${oRepo.name}" has been deleted.`
+    const repo = repos.allRepos[clearIndex.value]
+    await new FileSystemDriver(repo).deleteFile(DATABASE_PATH)
+    clearSuccess.value = `Storage data for "${repo.name}" has been deleted.`
   } catch (e: any) {
-    sClearStorageError.value = 'Failed to clear storage: ' + (e?.message || e)
+    clearError.value = 'Failed to clear storage: ' + (e?.message || e)
   } finally {
-    bClearingStorage.value = false
+    isClearing.value = false
   }
 }
 </script>

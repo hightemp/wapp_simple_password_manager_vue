@@ -35,8 +35,8 @@ export interface GoogleDriveFile {
 }
 
 // === Module-level state ===
-let gAccessToken: string | null = null
-let gTokenExpiresAt = 0
+let accessToken: string | null = null
+let tokenExpiresAt = 0
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3/files'
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files'
@@ -48,13 +48,13 @@ export function loadGisScript(): Promise<void> {
     return Promise.resolve()
   }
   return new Promise((resolve, reject) => {
-    const s = document.createElement('script')
-    s.src = 'https://accounts.google.com/gsi/client'
-    s.async = true
-    s.defer = true
-    s.onload = () => resolve()
-    s.onerror = () => reject(new Error('Failed to load Google Identity Services'))
-    document.head.appendChild(s)
+    const script = document.createElement('script')
+    script.src = 'https://accounts.google.com/gsi/client'
+    script.async = true
+    script.defer = true
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Failed to load Google Identity Services'))
+    document.head.appendChild(script)
   })
 }
 
@@ -69,9 +69,9 @@ export function requestToken(clientId: string): Promise<string> {
           reject(new Error(resp.error_description ?? resp.error))
           return
         }
-        gAccessToken = resp.access_token
-        gTokenExpiresAt = Date.now() + resp.expires_in * 1000
-        resolve(gAccessToken)
+        accessToken = resp.access_token
+        tokenExpiresAt = Date.now() + resp.expires_in * 1000
+        resolve(accessToken)
       },
       error_callback: (err) => reject(new Error(err.message)),
     })
@@ -81,8 +81,8 @@ export function requestToken(clientId: string): Promise<string> {
 
 export async function ensureToken(clientId: string): Promise<string> {
   // Reuse token if still valid (with 5-min buffer)
-  if (gAccessToken && Date.now() < gTokenExpiresAt - 300_000) {
-    return gAccessToken
+  if (accessToken && Date.now() < tokenExpiresAt - 300_000) {
+    return accessToken
   }
   await loadGisScript()
   return requestToken(clientId)
@@ -102,7 +102,7 @@ export async function findFile(
   )
   // Auto-retry on 401
   if (res.status === 401 && clientId) {
-    gAccessToken = null
+    accessToken = null
     const newToken = await ensureToken(clientId)
     res = await fetch(
       `${DRIVE_API}?spaces=appDataFolder&q=${q}&fields=files(id)`,

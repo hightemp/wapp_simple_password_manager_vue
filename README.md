@@ -37,7 +37,7 @@ A self-hosted, encrypted password manager built with Vue 3. Store your passwords
 - **Vite 6** — fast builds with HMR
 - **UnoCSS** — atomic CSS with custom design tokens
 - **Lucide Icons** — clean, consistent icon set
-- **Vitest** — 74 unit tests (crypto, lib, stores, FileSystemDriver, GoogleDriveClient)
+- **Vitest** — 66 unit tests (crypto, debounce, stores, FileSystemDriver, Google Drive client)
 - **Web Crypto API** — native browser encryption (AES-256-GCM + PBKDF2)
 
 ## Getting Started
@@ -139,27 +139,41 @@ npm run build
 
 ```
 src/
-├── main.ts              # App entry point
-├── App.vue              # Main layout (sidebar + data table)
-├── crypto.ts            # AES-256-GCM encryption + PBKDF2
-├── lib.ts               # Utilities (debounce, file save)
-├── FileSystemDriver.ts  # GitHub/WebDAV/LocalStorage/Google Drive adapters
-├── GoogleDriveClient.ts  # GIS auth + Drive REST API (no gapi/SDK)
+├── main.ts                    # App entry point
+├── App.vue                    # Main layout: data table, keyboard shortcuts, auto-lock
+├── components/
+│   ├── AppSidebar.vue         # Desktop sidebar menu
+│   ├── BottomNav.vue          # Mobile bottom navigation
+│   ├── BaseModal.vue          # Reusable modal with focus trap
+│   ├── ChangePasswordModal.vue    # Change master password
+│   ├── EntryContextMenu.vue   # Right-click menu for table rows
+│   ├── EntryEditModal.vue     # Entry editor
+│   ├── EntryFormFields.vue    # Dynamic form renderer
+│   ├── FormField.vue          # Individual form field
+│   ├── KeyboardShortcutsModal.vue # Shortcuts help
+│   ├── LoaderOverlay.vue      # Loading overlay
+│   ├── NotificationToast.vue  # Toast notification system
+│   ├── PasswordGenerator.vue  # Password generator panel
+│   └── RepoSettingsModal.vue  # Repository settings (split-view)
+├── composables/
+│   └── useNotify.ts           # Toast notifications via provide/inject
+├── services/
+│   ├── FileSystemDriver.ts    # GitHub/WebDAV/LocalStorage/Google Drive adapters
+│   └── googleDrive.ts         # GIS auth + Drive REST API (no gapi/SDK)
 ├── stores/
-│   ├── database.ts      # Database state + CRUD operations
-│   └── repos.ts         # Repository management
+│   ├── database.ts            # Database state + CRUD operations
+│   └── repos.ts               # Repository management
+├── types/
+│   └── menu.ts                # Sidebar / bottom nav actions
+├── utils/
+│   ├── crypto.ts              # AES encryption + PBKDF2 (with legacy 3DES reading)
+│   ├── debounce.ts
+│   └── download.ts            # Save JSON as a file
 ├── styles/
-│   ├── tokens.css       # Design tokens (colors, spacing, etc.)
-│   ├── base.css         # Global reset + typography
-│   └── main.css         # Style entry point
-└── components/
-    ├── BaseModal.vue     # Reusable modal with focus trap
-    ├── NotificationToast.vue  # Toast notification system
-    ├── repo_window.vue   # Repository settings (split-view)
-    ├── edit_window.vue   # Entry editor + password generator
-    ├── forms.vue         # Dynamic form renderer
-    ├── form_component.vue # Individual form field
-    └── loader.vue        # Loading overlay
+│   ├── tokens.css             # Design tokens (colors, spacing, etc.)
+│   ├── base.css               # Global reset + typography
+│   └── main.css               # Style entry point
+└── __tests__/                 # Unit tests (mirror src/ layout)
 ```
 
 ## License

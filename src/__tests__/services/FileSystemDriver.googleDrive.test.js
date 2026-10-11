@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fnEncrypt, fnDecrypt } from '../crypto'
+import { encrypt, decrypt } from '../../utils/crypto'
 
 // Mock google.accounts.oauth2 for FileSystemDriver googledrive init
 let mockTokenCallback = null
@@ -27,12 +27,12 @@ function setupGoogleMock() {
 }
 
 // Mock localStorage
-const oStorage = {}
+const storage = {}
 const localStorageMock = {
-  getItem: (key) => oStorage[key] ?? null,
-  setItem: (key, value) => { oStorage[key] = value },
-  removeItem: (key) => { delete oStorage[key] },
-  clear: () => { Object.keys(oStorage).forEach(k => delete oStorage[k]) },
+  getItem: (key) => storage[key] ?? null,
+  setItem: (key, value) => { storage[key] = value },
+  removeItem: (key) => { delete storage[key] },
+  clear: () => { Object.keys(storage).forEach(k => delete storage[k]) },
 }
 Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock })
 
@@ -47,7 +47,7 @@ describe('FileSystemDriver — googledrive type', () => {
     // Mock fetch before importing FileSystemDriver
     globalThis.fetch = vi.fn()
 
-    const mod = await import('../FileSystemDriver')
+    const mod = await import('../../services/FileSystemDriver')
     FileSystemDriver = mod.FileSystemDriver
   })
 
@@ -64,12 +64,12 @@ describe('FileSystemDriver — googledrive type', () => {
       name: 'My Google Drive',
       gdrive_client_id: 'test-id.apps.googleusercontent.com',
     })
-    expect(driver.oRepoItem.type).toBe('googledrive')
+    expect(driver.repo.type).toBe('googledrive')
     expect(driver.octokit).toBeNull()
     expect(driver.webdav).toBeNull()
   })
 
-  it('fnReadFile should route to googledrive handler', async () => {
+  it('readFile should route to googledrive handler', async () => {
     // Mock: findFile returns a file id, readFile returns content
     let callIdx = 0
     globalThis.fetch = vi.fn().mockImplementation((url) => {
@@ -94,12 +94,12 @@ describe('FileSystemDriver — googledrive type', () => {
       gdrive_client_id: 'test-id.apps.googleusercontent.com',
     })
 
-    const result = await driver.fnReadFile('passwords-database')
-    expect(result.sData).toBe('encrypted-content-here')
-    expect(result.sSHA).toBe('gd-file-1') // fileId cached as SHA
+    const result = await driver.readFile('passwords-database')
+    expect(result.data).toBe('encrypted-content-here')
+    expect(result.sha).toBe('gd-file-1') // fileId cached as SHA
   })
 
-  it('fnWriteFile should create file when it does not exist', async () => {
+  it('writeFile should create file when it does not exist', async () => {
     globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
       if (url.includes('spaces=appDataFolder')) {
         return Promise.resolve({
@@ -122,14 +122,14 @@ describe('FileSystemDriver — googledrive type', () => {
       gdrive_client_id: 'test-id.apps.googleusercontent.com',
     })
 
-    await driver.fnWriteFile('passwords-database', 'some-encrypted-data')
+    await driver.writeFile('passwords-database', 'some-encrypted-data')
     // Should have called create (POST)
     const postCall = fetch.mock.calls.find(([url, opts]) => opts?.method === 'POST')
     expect(postCall).toBeTruthy()
     expect(postCall[1].body).toContain('some-encrypted-data')
   })
 
-  it('fnWriteFile should update file when it already exists', async () => {
+  it('writeFile should update file when it already exists', async () => {
     globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
       if (url.includes('spaces=appDataFolder')) {
         return Promise.resolve({
@@ -149,13 +149,13 @@ describe('FileSystemDriver — googledrive type', () => {
       gdrive_client_id: 'test-id.apps.googleusercontent.com',
     })
 
-    await driver.fnWriteFile('passwords-database', 'updated-data')
+    await driver.writeFile('passwords-database', 'updated-data')
     const patchCall = fetch.mock.calls.find(([url, opts]) => opts?.method === 'PATCH')
     expect(patchCall).toBeTruthy()
     expect(patchCall[1].body).toBe('updated-data')
   })
 
-  it('fnReadFileCryptoJSON + fnWriteFileCryptoJSON should round-trip', async () => {
+  it('readEncryptedJson + writeEncryptedJson should round-trip', async () => {
     // In-memory storage for the "Google Drive file"
     let storedContent = null
 
@@ -205,7 +205,7 @@ describe('FileSystemDriver — googledrive type', () => {
     const data = { table: { data: [{ id: 1, name: 'Test', login: 'user' }] } }
 
     // Write encrypted
-    await driver.fnWriteFileCryptoJSON('passwords-database', data, password)
+    await driver.writeEncryptedJson('passwords-database', data, password)
     expect(storedContent).toBeTruthy()
 
     // Verify it's actually encrypted (v2 format)
@@ -214,11 +214,11 @@ describe('FileSystemDriver — googledrive type', () => {
     expect(parsed.salt).toBeTruthy()
 
     // Read back decrypted
-    const result = await driver.fnReadFileCryptoJSON('passwords-database', password)
+    const result = await driver.readEncryptedJson('passwords-database', password)
     expect(result).toEqual(data)
   })
 
-  it('fnReadFile should throw when file not found in appDataFolder', async () => {
+  it('readFile should throw when file not found in appDataFolder', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ files: [] }),
@@ -230,6 +230,6 @@ describe('FileSystemDriver — googledrive type', () => {
       gdrive_client_id: 'test-id.apps.googleusercontent.com',
     })
 
-    await expect(driver.fnReadFile('nonexistent')).rejects.toThrow('Not Found')
+    await expect(driver.readFile('nonexistent')).rejects.toThrow('Not Found')
   })
 })

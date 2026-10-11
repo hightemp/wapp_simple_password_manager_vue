@@ -3,88 +3,49 @@
   <a href="#main-table" class="skip-link">Skip to content</a>
 
   <div class="app-shell">
-    <!-- ===== Sidebar ===== -->
-    <aside class="sidebar">
-      <div class="sidebar-group">
-        <button
-          v-for="item in menuTop"
-          :key="item.id"
-          class="sidebar-btn"
-          :title="item.title"
-          :aria-label="item.title"
-          @click="fnClickLeftMenu(item)"
-        >
-          <div v-if="item.id === 'save'" :class="bSaveAnim ? 'i-lucide-check' : item.icon" :style="bSaveAnim ? 'color:var(--c-success)' : ''" />
-          <div v-else :class="item.icon" />
-          <span v-if="item.id === 'save' && db.iUnsavedChanges && !bSaveAnim" class="sidebar-badge" />
-        </button>
-      </div>
-
-      <div class="sidebar-group">
-        <button
-          v-for="item in menuData"
-          :key="item.id"
-          class="sidebar-btn"
-          :title="item.title"
-          :aria-label="item.title"
-          @click="fnClickLeftMenu(item)"
-        >
-          <div :class="item.icon" />
-        </button>
-        <button class="sidebar-btn" title="Import" aria-label="Import" @click="fnTriggerImport">
-          <div class="i-lucide-upload" />
-          <input type="file" ref="file_selector" class="sr-only" @change="fnFileImportChange" />
-        </button>
-      </div>
-
-      <div class="sidebar-spacer" />
-
-      <div class="sidebar-group">
-        <button class="sidebar-btn" title="Keyboard Shortcuts" aria-label="Keyboard Shortcuts" @click="bShowShortcuts = true">
-          <div class="i-lucide-keyboard" />
-        </button>
-        <button class="sidebar-btn" :title="themeLabel" :aria-label="themeLabel" @click="fnToggleTheme">
-          <div :class="bDarkTheme ? 'i-lucide-sun' : 'i-lucide-moon'" />
-        </button>
-      </div>
-    </aside>
+    <AppSidebar
+      :unsaved-changes="db.unsavedChanges"
+      :just-saved="justSaved"
+      :is-dark-theme="isDarkTheme"
+      @action="onMenuAction"
+    />
 
     <!-- ===== Main Content ===== -->
     <main class="main-content" id="main-table">
       <!-- Pagination bar -->
-      <div class="pagination-bar" v-if="iMaxPages > 1">
-        <button class="pg-btn" @click="fnFirst" :disabled="iPage <= 1" aria-label="First page">
+      <div class="pagination-bar" v-if="pageCount > 1">
+        <button class="pg-btn" @click="goToFirstPage" :disabled="page <= 1" aria-label="First page">
           <div class="i-lucide-chevrons-left" />
         </button>
-        <button class="pg-btn" @click="fnPrev" :disabled="iPage <= 1" aria-label="Previous page">
+        <button class="pg-btn" @click="goToPrevPage" :disabled="page <= 1" aria-label="Previous page">
           <div class="i-lucide-chevron-left" />
         </button>
-        <span class="pg-info">{{ iPage }} / {{ iMaxPages }}</span>
-        <button class="pg-btn" @click="fnNext" :disabled="iPage >= iMaxPages" aria-label="Next page">
+        <span class="pg-info">{{ page }} / {{ pageCount }}</span>
+        <button class="pg-btn" @click="goToNextPage" :disabled="page >= pageCount" aria-label="Next page">
           <div class="i-lucide-chevron-right" />
         </button>
-        <button class="pg-btn" @click="fnLast" :disabled="iPage >= iMaxPages" aria-label="Last page">
+        <button class="pg-btn" @click="goToLastPage" :disabled="page >= pageCount" aria-label="Last page">
           <div class="i-lucide-chevrons-right" />
         </button>
-        <span class="pg-count">{{ aRows.length }} entries</span>
+        <span class="pg-count">{{ filteredRows.length }} entries</span>
       </div>
 
       <!-- Data table -->
-      <div class="table-scroll" ref="tableScrollRef">
-        <div class="data-grid" role="grid" ref="dataGridRef" tabindex="0">
+      <div class="table-scroll" ref="tableScroll">
+        <div class="data-grid" role="grid" ref="dataGrid" tabindex="0">
           <!-- Header -->
           <div class="grid-row grid-header" :style="gridStyle" role="row">
             <div
-              v-for="(oSF, sK) in oStruct"
-              :key="sK"
+              v-for="(column, key) in columns"
+              :key="key"
               class="grid-cell grid-cell-header"
               role="columnheader"
-              @click="fnSort(sK as string)"
-              :aria-sort="sortKey === sK ? (sortAsc ? 'ascending' : 'descending') : 'none'"
+              @click="toggleSort(key as string)"
+              :aria-sort="sortKey === key ? (sortAsc ? 'ascending' : 'descending') : 'none'"
             >
               <div class="header-label-row">
-                <span class="header-label">{{ oSF.label }}</span>
-                <div v-if="sortKey === sK" :class="sortAsc ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'" class="sort-icon" />
+                <span class="header-label">{{ column.label }}</span>
+                <div v-if="sortKey === key" :class="sortAsc ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'" class="sort-icon" />
               </div>
               <div class="filter-wrap">
                 <div class="i-lucide-search filter-icon" />
@@ -92,8 +53,8 @@
                   type="text"
                   class="filter-input"
                   placeholder="Filter..."
-                  :value="oTable.filter[sK]"
-                  @input="(oE) => fnFilterInput(oE, sK)"
+                  :value="table.filter[key]"
+                  @input="(event) => onFilterInput(event, key as string)"
                   @click.stop
                   autocomplete="off"
                 />
@@ -102,7 +63,7 @@
           </div>
 
           <!-- Empty state -->
-          <div v-if="aSlicedRows.length === 0" class="empty-state">
+          <div v-if="pageRows.length === 0" class="empty-state">
             <div class="i-lucide-database empty-icon" />
             <p class="empty-title">No entries</p>
             <p class="empty-sub">Click <strong>Add</strong> to create your first entry</p>
@@ -111,50 +72,50 @@
           <!-- Rows -->
           <TransitionGroup name="row">
             <div
-              v-for="oRow in aSlicedRows"
-              :key="oRow.id ?? oRow"
-              :class="['grid-row', { active: oSelectedItem && oSelectedItem.id === oRow.id }]"
+              v-for="(row, index) in pageRows"
+              :key="row.id ?? index"
+              :class="['grid-row', { active: selectedEntry && selectedEntry.id === row.id }]"
               :style="gridStyle"
               role="row"
-              @click="fnItemClick(oRow)"
-              @dblclick="fnDblItemClick()"
-              @contextmenu.prevent="fnContextMenu($event, oRow)"
+              @click="selectRow(row)"
+              @dblclick="editSelected"
+              @contextmenu.prevent="openContextMenu($event, row)"
             >
-              <div v-for="(oSF, sK) in oStruct" :key="sK" class="grid-cell" role="gridcell">
+              <div v-for="(column, key) in columns" :key="key" class="grid-cell" role="gridcell">
                 <!-- URL -->
-                <template v-if="oRow[sK] && sK === 'url'">
+                <template v-if="row[key] && key === 'url'">
                   <div class="cell-url">
                     <div class="i-lucide-external-link cell-icon" />
-                    <a :href="oRow[sK]" target="_blank" rel="noopener" class="url-link">{{ oRow[sK] }}</a>
+                    <a :href="row[key]" target="_blank" rel="noopener" class="url-link">{{ row[key] }}</a>
                   </div>
                 </template>
                 <!-- Password -->
-                <template v-else-if="sK === 'password' && oRow[sK]">
+                <template v-else-if="key === 'password' && row[key]">
                   <div class="cell-secret">
                     <div class="i-lucide-lock cell-icon" />
-                    <span v-if="!revealedRows.has(oRow.id)" class="masked">••••••••</span>
-                    <span v-else class="revealed">{{ oRow[sK] }}</span>
-                    <button class="cell-action-btn" @click.stop="fnToggleMask(oRow.id)" :aria-label="revealedRows.has(oRow.id) ? 'Hide password' : 'Show password'">
-                      <div :class="revealedRows.has(oRow.id) ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
+                    <span v-if="!revealedRows.has(row.id)" class="masked">••••••••</span>
+                    <span v-else class="revealed">{{ row[key] }}</span>
+                    <button class="cell-action-btn" @click.stop="togglePasswordVisibility(row.id)" :aria-label="revealedRows.has(row.id) ? 'Hide password' : 'Show password'">
+                      <div :class="revealedRows.has(row.id) ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
                     </button>
-                    <button class="cell-action-btn" @click.stop="fnCopyWithFeedback(oRow[sK], 'password', oRow.id)" aria-label="Copy password">
-                      <div :class="copiedCells.has('password-' + oRow.id) ? 'i-lucide-check' : 'i-lucide-copy'" :style="copiedCells.has('password-' + oRow.id) ? 'color:var(--c-success)' : ''" />
+                    <button class="cell-action-btn" @click.stop="copyField(row, 'password')" aria-label="Copy password">
+                      <div :class="copiedCells.has('password-' + row.id) ? 'i-lucide-check' : 'i-lucide-copy'" :style="copiedCells.has('password-' + row.id) ? 'color:var(--c-success)' : ''" />
                     </button>
                   </div>
                 </template>
                 <!-- Login -->
-                <template v-else-if="sK === 'login' && oRow[sK]">
+                <template v-else-if="key === 'login' && row[key]">
                   <div class="cell-secret">
                     <div class="i-lucide-user cell-icon" />
-                    <span class="cell-text">{{ oRow[sK] }}</span>
-                    <button class="cell-action-btn" @click.stop="fnCopyWithFeedback(oRow[sK], 'login', oRow.id)" aria-label="Copy login">
-                      <div :class="copiedCells.has('login-' + oRow.id) ? 'i-lucide-check' : 'i-lucide-copy'" :style="copiedCells.has('login-' + oRow.id) ? 'color:var(--c-success)' : ''" />
+                    <span class="cell-text">{{ row[key] }}</span>
+                    <button class="cell-action-btn" @click.stop="copyField(row, 'login')" aria-label="Copy login">
+                      <div :class="copiedCells.has('login-' + row.id) ? 'i-lucide-check' : 'i-lucide-copy'" :style="copiedCells.has('login-' + row.id) ? 'color:var(--c-success)' : ''" />
                     </button>
                   </div>
                 </template>
                 <!-- Default -->
                 <template v-else>
-                  <span class="cell-text">{{ oRow[sK] }}</span>
+                  <span class="cell-text">{{ row[key] }}</span>
                 </template>
               </div>
             </div>
@@ -163,481 +124,166 @@
       </div>
 
       <!-- Bottom pagination for mobile -->
-      <div class="pagination-bar pagination-bottom" v-if="iMaxPages > 1">
-        <button class="pg-btn" @click="fnPrev" :disabled="iPage <= 1"><div class="i-lucide-chevron-left" /></button>
-        <span class="pg-info">{{ iPage }} / {{ iMaxPages }}</span>
-        <button class="pg-btn" @click="fnNext" :disabled="iPage >= iMaxPages"><div class="i-lucide-chevron-right" /></button>
+      <div class="pagination-bar pagination-bottom" v-if="pageCount > 1">
+        <button class="pg-btn" @click="goToPrevPage" :disabled="page <= 1"><div class="i-lucide-chevron-left" /></button>
+        <span class="pg-info">{{ page }} / {{ pageCount }}</span>
+        <button class="pg-btn" @click="goToNextPage" :disabled="page >= pageCount"><div class="i-lucide-chevron-right" /></button>
       </div>
     </main>
 
-    <!-- ===== Context Menu ===== -->
-    <Teleport to="body">
-      <Transition name="ctx">
-        <div
-          v-if="ctxMenu.show"
-          class="context-menu"
-          :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }"
-          @click="ctxMenu.show = false"
-        >
-          <button class="ctx-item" @click="fnCopyWithFeedback(ctxMenu.row?.login, 'login', ctxMenu.row?.id)">
-            <div class="i-lucide-user" /> Copy Login
-          </button>
-          <button class="ctx-item" @click="fnCopyWithFeedback(ctxMenu.row?.password, 'password', ctxMenu.row?.id)">
-            <div class="i-lucide-lock" /> Copy Password
-          </button>
-          <div class="ctx-sep" />
-          <button class="ctx-item" @click="fnEditCtx">
-            <div class="i-lucide-pencil" /> Edit
-          </button>
-          <button class="ctx-item" v-if="ctxMenu.row?.url" @click="fnOpenUrl(ctxMenu.row.url)">
-            <div class="i-lucide-external-link" /> Open URL
-          </button>
-          <div class="ctx-sep" />
-          <button class="ctx-item ctx-item--danger" @click="fnDeleteCtx">
-            <div class="i-lucide-trash-2" /> Delete
-          </button>
-        </div>
-      </Transition>
-    </Teleport>
+    <EntryContextMenu
+      :entry="contextMenu.entry"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      @copy="(field) => copyField(contextMenu.entry, field)"
+      @edit="db.openEditWindow(TABLE_NAME, contextMenu.entry)"
+      @delete="deleteEntry(contextMenu.entry)"
+      @close="closeContextMenu"
+    />
 
-    <!-- ===== Keyboard Shortcuts Modal ===== -->
-    <BaseModal v-model="bShowShortcuts" title="Keyboard Shortcuts" size="sm" :closable="true">
-      <div class="shortcuts-list">
-        <div class="shortcut-item" v-for="s in shortcuts" :key="s.key">
-          <kbd class="shortcut-kbd">{{ s.key }}</kbd>
-          <span class="shortcut-desc">{{ s.desc }}</span>
-        </div>
-      </div>
-    </BaseModal>
+    <KeyboardShortcutsModal v-model="showShortcuts" />
+    <ChangePasswordModal v-model="showChangePassword" />
 
-    <!-- ===== Change Master Password Modal ===== -->
-    <BaseModal v-model="bShowChangePw" title="Change Master Password" size="md" :closable="true">
-      <div class="chpw-form">
-        <p class="chpw-hint">The database will be re-encrypted with the new password and saved to all connected repositories.</p>
-
-        <div class="form-field">
-          <label class="form-field-label">Current Password</label>
-          <input type="password" class="form-field-input" :value="db.sPassword" readonly autocomplete="off" />
-        </div>
-
-        <div class="form-field">
-          <label class="form-field-label">New Password</label>
-          <input type="password" class="form-field-input" v-model="sNewPassword" autocomplete="off"
-            :class="{ 'input-error': sChPwError && !sNewPassword }" placeholder="Enter new password" />
-        </div>
-
-        <div class="form-field">
-          <label class="form-field-label">Confirm New Password</label>
-          <input type="password" class="form-field-input" v-model="sNewPasswordConfirm" autocomplete="off"
-            :class="{ 'input-error': sChPwError && sNewPassword !== sNewPasswordConfirm }" placeholder="Repeat new password" />
-        </div>
-
-        <Transition name="error-slide">
-          <div v-if="sChPwError" class="chpw-error">
-            <div class="i-lucide-alert-circle" />
-            <span>{{ sChPwError }}</span>
-          </div>
-        </Transition>
-      </div>
-
-      <template #footer>
-        <div class="modal-footer-row">
-          <button class="action-btn action-btn--ghost" @click="bShowChangePw = false">Cancel</button>
-          <button class="action-btn action-btn--primary" @click="fnChangePassword" :disabled="bChPwSaving">
-            <div v-if="bChPwSaving" class="i-lucide-loader-2 spin" />
-            <div v-else class="i-lucide-key" />
-            {{ bChPwSaving ? 'Saving...' : 'Change Password' }}
-          </button>
-        </div>
-      </template>
-    </BaseModal>
-
-    <!-- ===== Mobile bottom nav ===== -->
-    <nav class="bottom-nav">
-      <button class="bottom-nav-btn" @click="db.bShowRepoWindow = true" aria-label="Repository">
-        <div class="i-lucide-database" />
-      </button>
-      <button class="bottom-nav-btn" @click="fnAddClick" aria-label="Add">
-        <div class="i-lucide-plus" />
-      </button>
-      <button class="bottom-nav-btn" @click="fnSaveAll" aria-label="Save">
-        <div class="i-lucide-save" />
-        <span v-if="db.iUnsavedChanges" class="sidebar-badge" />
-      </button>
-      <button class="bottom-nav-btn" @click="fnToggleTheme" :aria-label="themeLabel">
-        <div :class="bDarkTheme ? 'i-lucide-sun' : 'i-lucide-moon'" />
-      </button>
-    </nav>
+    <BottomNav
+      :unsaved-changes="db.unsavedChanges"
+      :is-dark-theme="isDarkTheme"
+      @action="onMenuAction"
+    />
   </div>
 
-  <EditWindow title="Edit Entry" :form_name="sTableName" :table_name="sTableName" />
-  <RepoWindow />
-  <NotificationToast ref="notifRef" />
+  <input type="file" ref="importInput" class="sr-only" @change="importDatabase" />
+
+  <EntryEditModal title="Edit Entry" :form-name="TABLE_NAME" :table-name="TABLE_NAME" />
+  <RepoSettingsModal />
+  <NotificationToast ref="notifications" />
   <LoaderOverlay />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, useTemplateRef, provide, reactive, nextTick } from 'vue'
-import { useDatabaseStore } from './stores/database'
-import { useReposStore } from './stores/repos'
-import { fnDebounce } from './lib'
+import { useDatabaseStore, type Entry } from '@/stores/database'
+import { useReposStore } from '@/stores/repos'
+import { debounce } from '@/utils/debounce'
+import { NOTIFY_KEY, type NotifyFn } from '@/composables/useNotify'
+import type { MenuAction } from '@/types/menu'
 
-import EditWindow from './components/edit_window.vue'
-import RepoWindow from './components/repo_window.vue'
-import NotificationToast from './components/NotificationToast.vue'
-import LoaderOverlay from './components/loader.vue'
-import BaseModal from './components/BaseModal.vue'
+import AppSidebar from '@/components/AppSidebar.vue'
+import BottomNav from '@/components/BottomNav.vue'
+import EntryEditModal from '@/components/EntryEditModal.vue'
+import EntryContextMenu from '@/components/EntryContextMenu.vue'
+import RepoSettingsModal from '@/components/RepoSettingsModal.vue'
+import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
+import KeyboardShortcutsModal from '@/components/KeyboardShortcutsModal.vue'
+import NotificationToast from '@/components/NotificationToast.vue'
+import LoaderOverlay from '@/components/LoaderOverlay.vue'
+
+const TABLE_NAME = 'table'
+const AUTO_LOCK_TIMEOUT = 5 * 60 * 1000
+// localStorage key kept as-is so the saved theme survives the rename
+const THEME_STORAGE_KEY = 'bDarkTheme'
+
+const COLUMN_WIDTHS: Record<string, string> = {
+  category: '120px',
+  name: 'minmax(120px, 1.5fr)',
+  login: 'minmax(100px, 1fr)',
+  password: '160px',
+  url: 'minmax(100px, 1.2fr)',
+}
 
 const db = useDatabaseStore()
 const repos = useReposStore()
 
-const file_selector = useTemplateRef('file_selector')
-const notifRef = ref<InstanceType<typeof NotificationToast> | null>(null)
-const tableScrollRef = ref<HTMLElement | null>(null)
-const dataGridRef = ref<HTMLElement | null>(null)
+const importInput = useTemplateRef<HTMLInputElement>('importInput')
+const notifications = useTemplateRef('notifications')
+const tableScroll = useTemplateRef<HTMLElement>('tableScroll')
+const dataGrid = useTemplateRef<HTMLElement>('dataGrid')
 
-// Provide notification globally
-provide('notify', (title: string, message?: string, type?: 'success' | 'error' | 'info') => {
-  notifRef.value?.show(title, message, type)
-})
+const notify: NotifyFn = (title, message, type, duration) => {
+  notifications.value?.show(title, message, type, duration)
+}
+provide(NOTIFY_KEY, notify)
 
 // --- local state ---
-const menuTop = [
-  { id: 'repo-window', title: 'Select Repository', icon: 'i-lucide-database' },
-  { id: 'save', title: 'Save', icon: 'i-lucide-save' },
-  { id: 'change-password', title: 'Change Password', icon: 'i-lucide-key-round' },
-  { id: 'add', title: 'Add', icon: 'i-lucide-plus' },
-  { id: 'edit', title: 'Edit', icon: 'i-lucide-pencil' },
-  { id: 'remove', title: 'Delete', icon: 'i-lucide-trash-2' },
-]
-
-const menuData = [
-  { id: 'export', title: 'Export', icon: 'i-lucide-download' },
-]
-
-const oSelectedItem = ref(null)
-const sTableName = 'table'
-const revealedRows = reactive(new Set<string>())
+const selectedEntry = ref<any>(null)
+const revealedRows = reactive(new Set<Entry['id']>())
 const copiedCells = reactive(new Set<string>())
-const bDarkTheme = ref(localStorage.getItem('bDarkTheme') === 'true')
-const bSaveAnim = ref(false)
-const bShowShortcuts = ref(false)
-let iAutoLockTimer: ReturnType<typeof setTimeout> | null = null
-const iAutoLockTimeout = 5 * 60 * 1000
+const isDarkTheme = ref(localStorage.getItem(THEME_STORAGE_KEY) === 'true')
+const justSaved = ref(false)
+const showShortcuts = ref(false)
+const showChangePassword = ref(false)
+let autoLockTimer: ReturnType<typeof setTimeout> | null = null
 
 // Sorting
 const sortKey = ref<string | null>(null)
 const sortAsc = ref(true)
 
-// Context menu
-const ctxMenu = reactive({ show: false, x: 0, y: 0, row: null as any })
-
-const themeLabel = computed(() => bDarkTheme.value ? 'Light theme' : 'Dark theme')
-
-// Keyboard shortcuts info
-const shortcuts = [
-  { key: 'Ctrl + S', desc: 'Save all changes' },
-  { key: 'Ctrl + N', desc: 'Add new entry' },
-  { key: 'Ctrl + F', desc: 'Focus first filter' },
-  { key: '↑ / ↓', desc: 'Select previous / next entry' },
-  { key: '← / →', desc: 'Previous / next page' },
-  { key: 'Home / End', desc: 'First / last page' },
-  { key: 'Delete', desc: 'Delete selected entry' },
-  { key: 'Enter', desc: 'Edit selected entry' },
-  { key: 'Escape', desc: 'Deselect / Close modal' },
-]
+// Context menu (shown while `entry` is set)
+const contextMenu = reactive({ entry: null as any, x: 0, y: 0 })
 
 // --- computed ---
-const oStruct = computed(() => db.oStructure.table)
-const oTable = computed(() => db.oDatabase.table)
-const iStructLength = computed(() => Object.keys(oStruct.value).length)
+const columns = computed(() => db.structure[TABLE_NAME])
+const table = computed(() => db.database[TABLE_NAME])
 
 const gridStyle = computed(() => {
-  const cols: string[] = []
-  const keys = Object.keys(oStruct.value)
-  for (const k of keys) {
-    if (k === 'category') cols.push('120px')
-    else if (k === 'name') cols.push('minmax(120px, 1.5fr)')
-    else if (k === 'login') cols.push('minmax(100px, 1fr)')
-    else if (k === 'password') cols.push('160px')
-    else if (k === 'url') cols.push('minmax(100px, 1.2fr)')
-    else cols.push('minmax(80px, 1fr)')
-  }
-  return { display: 'grid', gridTemplateColumns: cols.join(' ') }
+  const widths = Object.keys(columns.value).map((key) => COLUMN_WIDTHS[key] ?? 'minmax(80px, 1fr)')
+  return { display: 'grid', gridTemplateColumns: widths.join(' ') }
 })
 
-const iPageCount = computed(() => {
-  const h = tableScrollRef.value?.clientHeight ?? (window.innerHeight - 100)
-  return Math.max(1, Math.floor((h - 60) / 40))
+const rowsPerPage = computed(() => {
+  const height = tableScroll.value?.clientHeight ?? (window.innerHeight - 100)
+  return Math.max(1, Math.floor((height - 60) / 40))
 })
 
-const iPage = computed({
-  get: () => db.oDatabase.table.page ?? 1,
-  set: (sV) => { db.oDatabase.table.page = sV * 1 },
+const page = computed({
+  get: () => table.value.page ?? 1,
+  set: (value) => { table.value.page = Number(value) },
 })
 
-const aRows = computed(() => {
-  let result = oTable.value.data.filter((oI: Record<string, string>) => {
-    let bResult = true
-    for (const sK in oTable.value.filter) {
-      if (oTable.value.filter[sK]) {
-        bResult = bResult && ~oI[sK].indexOf(oTable.value.filter[sK])
-      }
-    }
-    return bResult
-  })
+const filteredRows = computed(() => {
+  const filter = table.value.filter
+  let rows = table.value.data.filter((entry: Record<string, string>) =>
+    Object.keys(filter).every((key) => !filter[key] || String(entry[key] ?? '').includes(filter[key]))
+  )
 
-  // Sorting
   if (sortKey.value) {
     const key = sortKey.value
-    const asc = sortAsc.value
-    result = [...result].sort((a: any, b: any) => {
-      const va = (a[key] ?? '').toString().toLowerCase()
-      const vb = (b[key] ?? '').toString().toLowerCase()
-      if (va < vb) return asc ? -1 : 1
-      if (va > vb) return asc ? 1 : -1
+    const direction = sortAsc.value ? 1 : -1
+    rows = [...rows].sort((a: any, b: any) => {
+      const left = (a[key] ?? '').toString().toLowerCase()
+      const right = (b[key] ?? '').toString().toLowerCase()
+      if (left < right) return -direction
+      if (left > right) return direction
       return 0
     })
   }
 
-  return result
+  return rows
 })
 
-const iMaxPages = computed(() => Math.max(1, Math.ceil(aRows.value.length / iPageCount.value)))
+const pageCount = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / rowsPerPage.value)))
 
-const aSlicedRows = computed(() =>
-  aRows.value.slice((iPage.value - 1) * iPageCount.value, iPage.value * iPageCount.value)
+const pageRows = computed(() =>
+  filteredRows.value.slice((page.value - 1) * rowsPerPage.value, page.value * rowsPerPage.value)
 )
 
-// --- methods ---
-function fnFirst() { iPage.value = 1 }
-function fnPrev() { if (iPage.value > 1) iPage.value -= 1 }
-function fnLast() { iPage.value = iMaxPages.value }
-function fnNext() { if (iPage.value < iMaxPages.value) iPage.value += 1 }
+// --- pagination ---
+function goToFirstPage() { page.value = 1 }
+function goToPrevPage() { if (page.value > 1) page.value -= 1 }
+function goToLastPage() { page.value = pageCount.value }
+function goToNextPage() { if (page.value < pageCount.value) page.value += 1 }
 
-function fnCopyWithFeedback(sText: string, field: string, rowId: string) {
-  if (!sText) return
-  navigator.clipboard.writeText(sText)
-  const key = `${field}-${rowId}`
-  copiedCells.add(key)
-  setTimeout(() => copiedCells.delete(key), 1500)
-  notifRef.value?.show('Copied', '', 'success', 1500)
+// --- table ---
+function copyField(entry: any, field: 'login' | 'password') {
+  const text = entry?.[field]
+  if (!text) return
+  navigator.clipboard.writeText(text)
+  const cellKey = `${field}-${entry.id}`
+  copiedCells.add(cellKey)
+  setTimeout(() => copiedCells.delete(cellKey), 1500)
+  notify('Copied', '', 'success', 1500)
 }
 
-function fnSort(key: string) {
-  if (sortKey.value === key) {
-    sortAsc.value = !sortAsc.value
-  } else {
-    sortKey.value = key
-    sortAsc.value = true
-  }
-}
-
-function fnContextMenu(e: MouseEvent, oRow: any) {
-  oSelectedItem.value = oRow
-  ctxMenu.show = true
-  ctxMenu.x = e.clientX
-  ctxMenu.y = e.clientY
-  ctxMenu.row = oRow
-}
-
-function fnEditCtx() {
-  if (ctxMenu.row) {
-    db.fnShowEditWindow({ sFormName: sTableName, oItem: ctxMenu.row })
-  }
-}
-
-function fnDeleteCtx() {
-  if (ctxMenu.row) {
-    if (confirm('Are you sure you want to delete this entry?')) {
-      db.fnRemoveFromTable({ sTableName, oItem: ctxMenu.row })
-      if (oSelectedItem.value?.id === ctxMenu.row.id) oSelectedItem.value = null
-    }
-  }
-}
-
-function fnOpenUrl(url: string) {
-  window.open(url, '_blank', 'noopener')
-}
-
-const fnFilterInput = fnDebounce((oE: Event, sK: string) => {
-  db.fnUpdateFilter({ sTableName, sName: sK, sV: (oE.target as HTMLInputElement).value })
-  // Reset to page 1 when filter changes so rows aren't out of range
-  iPage.value = 1
-}, 300)
-
-function fnClickLeftMenu(oItem: { id: string }) {
-  if (oItem.id === 'repo-window') db.bShowRepoWindow = true
-  if (oItem.id === 'save') fnSaveAll()
-  if (oItem.id === 'change-password') fnOpenChangePassword()
-  if (oItem.id === 'add') fnAddClick()
-  if (oItem.id === 'edit') fnEditClick()
-  if (oItem.id === 'remove') fnRemoveClick()
-  if (oItem.id === 'export') db.fnExportDatabase()
-}
-
-function fnItemClick(oRow: any) {
-  oSelectedItem.value = oRow
-  // Focus the grid so keyboard navigation works
-  dataGridRef.value?.focus()
-}
-
-function fnSelectNext() {
-  const rows = aSlicedRows.value
-  if (rows.length === 0) return
-  if (!oSelectedItem.value) {
-    // Nothing selected — select first on current page
-    oSelectedItem.value = rows[0]
-    return
-  }
-  const idx = rows.findIndex((r: any) => r.id === oSelectedItem.value?.id)
-  if (idx === -1) {
-    // Selected item is not on this page — select first
-    oSelectedItem.value = rows[0]
-  } else if (idx < rows.length - 1) {
-    // Move down within the page
-    oSelectedItem.value = rows[idx + 1]
-  } else if (iPage.value < iMaxPages.value) {
-    // At the bottom of the page — go to next page and select first row
-    fnNext()
-    nextTick(() => {
-      const newRows = aSlicedRows.value
-      if (newRows.length > 0) oSelectedItem.value = newRows[0]
-    })
-  }
-}
-
-function fnSelectPrev() {
-  const rows = aSlicedRows.value
-  if (rows.length === 0) return
-  if (!oSelectedItem.value) {
-    // Nothing selected — select last on current page
-    oSelectedItem.value = rows[rows.length - 1]
-    return
-  }
-  const idx = rows.findIndex((r: any) => r.id === oSelectedItem.value?.id)
-  if (idx === -1) {
-    // Selected item not on page — select last
-    oSelectedItem.value = rows[rows.length - 1]
-  } else if (idx > 0) {
-    // Move up within the page
-    oSelectedItem.value = rows[idx - 1]
-  } else if (iPage.value > 1) {
-    // At the top of the page — go to previous page and select last row
-    fnPrev()
-    nextTick(() => {
-      const newRows = aSlicedRows.value
-      if (newRows.length > 0) oSelectedItem.value = newRows[newRows.length - 1]
-    })
-  }
-}
-
-function fnDblItemClick() {
-  if (oSelectedItem.value) {
-    db.fnShowEditWindow({ sFormName: sTableName, oItem: oSelectedItem.value })
-  }
-}
-
-function fnAddClick() {
-  db.fnShowEditWindow({ sFormName: sTableName, oItem: {} })
-}
-
-function fnEditClick() {
-  if (oSelectedItem.value) {
-    db.fnShowEditWindow({ sFormName: sTableName, oItem: oSelectedItem.value })
-  } else {
-    alert('Please select an entry')
-  }
-}
-
-function fnRemoveClick() {
-  if (oSelectedItem.value) {
-    if (confirm('Are you sure you want to delete this entry?')) {
-      db.fnRemoveFromTable({ sTableName, oItem: oSelectedItem.value })
-      oSelectedItem.value = null
-    }
-  } else {
-    alert('Please select an entry')
-  }
-}
-
-function fnSaveAll() {
-  db.fnSaveToAllDatabase()
-  bSaveAnim.value = true
-  setTimeout(() => { bSaveAnim.value = false }, 2000)
-  notifRef.value?.show('Saved', 'Data has been saved', 'success')
-}
-
-// --- Change Master Password ---
-const bShowChangePw = ref(false)
-const sNewPassword = ref('')
-const sNewPasswordConfirm = ref('')
-const sChPwError = ref('')
-const bChPwSaving = ref(false)
-
-function fnOpenChangePassword() {
-  if (!db.sPassword) {
-    notifRef.value?.show('Not connected', 'Connect to a repository first', 'error')
-    return
-  }
-  sNewPassword.value = ''
-  sNewPasswordConfirm.value = ''
-  sChPwError.value = ''
-  bChPwSaving.value = false
-  bShowChangePw.value = true
-}
-
-async function fnChangePassword() {
-  sChPwError.value = ''
-
-  if (!sNewPassword.value) {
-    sChPwError.value = 'New password is required'
-    return
-  }
-  if (sNewPassword.value.length < 4) {
-    sChPwError.value = 'Password must be at least 4 characters'
-    return
-  }
-  if (sNewPassword.value !== sNewPasswordConfirm.value) {
-    sChPwError.value = 'Passwords do not match'
-    return
-  }
-  if (sNewPassword.value === db.sPassword) {
-    sChPwError.value = 'New password must be different from the current one'
-    return
-  }
-
-  bChPwSaving.value = true
-  try {
-    // Update the master password in the store
-    db.sPassword = sNewPassword.value
-    // Re-encrypt and save to all repos with the new password
-    await db.fnSaveToAllDatabase()
-    bShowChangePw.value = false
-    notifRef.value?.show('Password Changed', 'Database re-encrypted with the new password', 'success')
-  } catch (e) {
-    sChPwError.value = 'Failed to save: ' + e
-  } finally {
-    bChPwSaving.value = false
-  }
-}
-
-function fnTriggerImport() {
-  file_selector.value?.click()
-}
-
-function fnImport() {
-  const el = file_selector.value as HTMLInputElement
-  const oFile = el.files?.[0]
-  if (!oFile) return
-  const reader = new FileReader()
-  reader.readAsText(oFile)
-  reader.onload = () => db.fnImportDatabase(reader.result as string)
-}
-
-function fnFileImportChange() { fnImport() }
-
-function fnToggleMask(rowId: string) {
+function togglePasswordVisibility(rowId: Entry['id']) {
   if (revealedRows.has(rowId)) {
     revealedRows.delete(rowId)
   } else {
@@ -646,107 +292,232 @@ function fnToggleMask(rowId: string) {
   }
 }
 
-function fnToggleTheme() {
-  bDarkTheme.value = !bDarkTheme.value
-  localStorage.setItem('bDarkTheme', String(bDarkTheme.value))
-  document.documentElement.setAttribute('data-theme', bDarkTheme.value ? 'dark' : 'light')
+function toggleSort(key: string) {
+  if (sortKey.value === key) {
+    sortAsc.value = !sortAsc.value
+  } else {
+    sortKey.value = key
+    sortAsc.value = true
+  }
 }
 
-function fnResetAutoLock() {
-  if (iAutoLockTimer) clearTimeout(iAutoLockTimer)
-  iAutoLockTimer = setTimeout(() => {
-    if (db.sPassword) {
-      db.sPassword = ''
-      db.bShowRepoWindow = true
+const onFilterInput = debounce((event: Event, key: string) => {
+  db.setFilter(TABLE_NAME, key, (event.target as HTMLInputElement).value)
+  // Reset to page 1 when filter changes so rows aren't out of range
+  page.value = 1
+}, 300)
+
+function openContextMenu(event: MouseEvent, row: any) {
+  selectedEntry.value = row
+  contextMenu.entry = row
+  contextMenu.x = event.clientX
+  contextMenu.y = event.clientY
+}
+
+function closeContextMenu() {
+  contextMenu.entry = null
+}
+
+// --- selection ---
+function selectRow(row: any) {
+  selectedEntry.value = row
+  // Focus the grid so keyboard navigation works
+  dataGrid.value?.focus()
+}
+
+function selectNext() {
+  const rows = pageRows.value
+  if (rows.length === 0) return
+  const index = rows.findIndex((row: any) => row.id === selectedEntry.value?.id)
+  if (index === -1) {
+    // Nothing selected or selection is on another page — select first
+    selectedEntry.value = rows[0]
+  } else if (index < rows.length - 1) {
+    selectedEntry.value = rows[index + 1]
+  } else if (page.value < pageCount.value) {
+    // At the bottom of the page — go to next page and select first row
+    goToNextPage()
+    nextTick(() => {
+      if (pageRows.value.length > 0) selectedEntry.value = pageRows.value[0]
+    })
+  }
+}
+
+function selectPrev() {
+  const rows = pageRows.value
+  if (rows.length === 0) return
+  const index = rows.findIndex((row: any) => row.id === selectedEntry.value?.id)
+  if (index === -1) {
+    // Nothing selected or selection is on another page — select last
+    selectedEntry.value = rows[rows.length - 1]
+  } else if (index > 0) {
+    selectedEntry.value = rows[index - 1]
+  } else if (page.value > 1) {
+    // At the top of the page — go to previous page and select last row
+    goToPrevPage()
+    nextTick(() => {
+      const newRows = pageRows.value
+      if (newRows.length > 0) selectedEntry.value = newRows[newRows.length - 1]
+    })
+  }
+}
+
+// --- entry actions ---
+function addEntry() {
+  db.openEditWindow(TABLE_NAME, {})
+}
+
+function editSelected() {
+  if (selectedEntry.value) {
+    db.openEditWindow(TABLE_NAME, selectedEntry.value)
+  } else {
+    alert('Please select an entry')
+  }
+}
+
+function deleteEntry(entry: any) {
+  if (!entry) return
+  if (confirm('Are you sure you want to delete this entry?')) {
+    db.removeEntry(TABLE_NAME, entry)
+    if (selectedEntry.value?.id === entry.id) selectedEntry.value = null
+  }
+}
+
+function deleteSelected() {
+  if (selectedEntry.value) {
+    deleteEntry(selectedEntry.value)
+  } else {
+    alert('Please select an entry')
+  }
+}
+
+function saveAll() {
+  db.saveToAllRepos()
+  justSaved.value = true
+  setTimeout(() => { justSaved.value = false }, 2000)
+  notify('Saved', 'Data has been saved', 'success')
+}
+
+function openChangePassword() {
+  if (!db.masterPassword) {
+    notify('Not connected', 'Connect to a repository first', 'error')
+    return
+  }
+  showChangePassword.value = true
+}
+
+function importDatabase() {
+  const file = importInput.value?.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.readAsText(file)
+  reader.onload = () => db.importDatabase(reader.result as string)
+}
+
+function toggleTheme() {
+  isDarkTheme.value = !isDarkTheme.value
+  localStorage.setItem(THEME_STORAGE_KEY, String(isDarkTheme.value))
+  document.documentElement.setAttribute('data-theme', isDarkTheme.value ? 'dark' : 'light')
+}
+
+function onMenuAction(action: MenuAction) {
+  switch (action) {
+    case 'repo-window': db.isRepoWindowOpen = true; break
+    case 'save': saveAll(); break
+    case 'change-password': openChangePassword(); break
+    case 'add': addEntry(); break
+    case 'edit': editSelected(); break
+    case 'remove': deleteSelected(); break
+    case 'export': db.exportDatabase(); break
+    case 'import': importInput.value?.click(); break
+    case 'shortcuts': showShortcuts.value = true; break
+    case 'toggle-theme': toggleTheme(); break
+  }
+}
+
+// --- auto lock ---
+function resetAutoLock() {
+  if (autoLockTimer) clearTimeout(autoLockTimer)
+  autoLockTimer = setTimeout(() => {
+    if (db.masterPassword) {
+      db.masterPassword = ''
+      db.isRepoWindowOpen = true
     }
-  }, iAutoLockTimeout)
+  }, AUTO_LOCK_TIMEOUT)
 }
 
-function fnCloseCtxOnClick() { ctxMenu.show = false }
+// --- keyboard ---
+function isInputFocused() {
+  const tag = document.activeElement?.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.ctrlKey && event.key === 's') {
+    event.preventDefault()
+    saveAll()
+  }
+  if (event.ctrlKey && event.key === 'n') {
+    event.preventDefault()
+    addEntry()
+  }
+  if (event.ctrlKey && event.key === 'f') {
+    event.preventDefault()
+    document.querySelector<HTMLInputElement>('.filter-input')?.focus()
+  }
+  if (event.key === 'Delete' && !event.ctrlKey && !event.altKey && !isInputFocused()) {
+    deleteSelected()
+  }
+  if (event.key === 'Enter' && !event.ctrlKey && !event.altKey && !isInputFocused()) {
+    event.preventDefault()
+    editSelected()
+  }
+  if (event.key === 'Escape') {
+    selectedEntry.value = null
+    closeContextMenu()
+  }
+
+  // Arrow key navigation (only when no input/textarea is focused)
+  if (!isInputFocused() && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    const navigation: Record<string, () => void> = {
+      ArrowDown: () => { selectNext(); dataGrid.value?.focus() },
+      ArrowUp: () => { selectPrev(); dataGrid.value?.focus() },
+      ArrowRight: goToNextPage,
+      ArrowLeft: goToPrevPage,
+      Home: goToFirstPage,
+      End: goToLastPage,
+    }
+    const handler = navigation[event.key]
+    if (handler) {
+      event.preventDefault()
+      handler()
+    }
+  }
+}
 
 // --- lifecycle ---
 onMounted(() => {
-  repos.fnLoadRepos()
+  repos.loadRepos()
 
-  if (bDarkTheme.value) {
+  if (isDarkTheme.value) {
     document.documentElement.setAttribute('data-theme', 'dark')
   }
 
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.key === 's') {
-      e.preventDefault()
-      fnSaveAll()
-    }
-    if (e.ctrlKey && e.key === 'n') {
-      e.preventDefault()
-      fnAddClick()
-    }
-    if (e.ctrlKey && e.key === 'f') {
-      e.preventDefault()
-      const firstFilter = document.querySelector('.filter-input') as HTMLInputElement | null
-      firstFilter?.focus()
-    }
-    if (e.key === 'Delete' && !e.ctrlKey && !e.altKey) {
-      const tag = document.activeElement?.tagName
-      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
-        fnRemoveClick()
-      }
-    }
-    if (e.key === 'Enter' && !e.ctrlKey && !e.altKey) {
-      const tag = document.activeElement?.tagName
-      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
-        e.preventDefault()
-        fnEditClick()
-      }
-    }
-    if (e.key === 'Escape') {
-      oSelectedItem.value = null
-      ctxMenu.show = false
-    }
-
-    // Arrow key navigation (only when no input/textarea is focused)
-    const bInputFocused = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'SELECT'
-    if (!bInputFocused && !e.ctrlKey && !e.altKey && !e.metaKey) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        fnSelectNext()
-        dataGridRef.value?.focus()
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        fnSelectPrev()
-        dataGridRef.value?.focus()
-      }
-      if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        fnNext()
-      }
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        fnPrev()
-      }
-      if (e.key === 'Home') {
-        e.preventDefault()
-        fnFirst()
-      }
-      if (e.key === 'End') {
-        e.preventDefault()
-        fnLast()
-      }
-    }
-  })
-
-  document.addEventListener('click', fnCloseCtxOnClick)
-
-  const fnActivity = () => fnResetAutoLock()
-  document.addEventListener('mousemove', fnActivity)
-  document.addEventListener('keydown', fnActivity)
-  document.addEventListener('click', fnActivity)
-  fnResetAutoLock()
+  document.addEventListener('keydown', onKeydown)
+  document.addEventListener('click', closeContextMenu)
+  for (const eventName of ['mousemove', 'keydown', 'click']) {
+    document.addEventListener(eventName, resetAutoLock)
+  }
+  resetAutoLock()
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', fnCloseCtxOnClick)
+  document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('click', closeContextMenu)
+  for (const eventName of ['mousemove', 'keydown', 'click']) {
+    document.removeEventListener(eventName, resetAutoLock)
+  }
+  if (autoLockTimer) clearTimeout(autoLockTimer)
 })
 </script>
 
@@ -768,7 +539,6 @@ onUnmounted(() => {
 .skip-link:focus {
   top: var(--space-2);
 }
-
 /* ===== App Shell ===== */
 .app-shell {
   position: fixed;
@@ -776,72 +546,6 @@ onUnmounted(() => {
   display: flex;
   background: var(--c-bg);
 }
-
-/* ===== Sidebar ===== */
-.sidebar {
-  width: 56px;
-  height: 100%;
-  background: var(--c-bg-elevated);
-  border-right: 1px solid var(--c-border);
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-2);
-  gap: var(--space-1);
-  flex-shrink: 0;
-}
-
-.sidebar-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.sidebar-group + .sidebar-group {
-  margin-top: var(--space-2);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--c-border);
-}
-
-.sidebar-spacer { flex: 1; }
-
-.sidebar-btn {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--c-text-secondary);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  font-size: 20px;
-}
-.sidebar-btn:hover {
-  background: var(--c-bg-hover);
-  color: var(--c-text);
-}
-.sidebar-btn:active {
-  transform: scale(0.95);
-}
-
-.sidebar-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 8px;
-  height: 8px;
-  background: var(--c-danger);
-  border-radius: var(--radius-full);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(0.8); }
-}
-
 /* ===== Main Content ===== */
 .main-content {
   flex: 1;
@@ -850,7 +554,6 @@ onUnmounted(() => {
   overflow: hidden;
   min-width: 0;
 }
-
 /* ===== Pagination ===== */
 .pagination-bar {
   display: flex;
@@ -904,7 +607,6 @@ onUnmounted(() => {
   color: var(--c-text-muted);
   margin-left: var(--space-2);
 }
-
 /* ===== Table ===== */
 .table-scroll {
   flex: 1;
@@ -1029,7 +731,6 @@ onUnmounted(() => {
 .filter-input::placeholder {
   color: var(--c-text-muted);
 }
-
 /* ===== Cell Variants ===== */
 .cell-icon {
   flex-shrink: 0;
@@ -1105,7 +806,6 @@ onUnmounted(() => {
   background: var(--c-bg-hover);
   color: var(--c-text);
 }
-
 /* ===== Empty State ===== */
 .empty-state {
   display: flex;
@@ -1134,7 +834,6 @@ onUnmounted(() => {
   font-size: var(--text-sm);
   color: var(--c-text-muted);
 }
-
 /* ===== Row Transitions ===== */
 .row-enter-active,
 .row-leave-active {
@@ -1148,7 +847,6 @@ onUnmounted(() => {
   opacity: 0;
   transform: translateX(10px);
 }
-
 /* ===== Screen reader only ===== */
 .sr-only {
   position: absolute;
@@ -1160,252 +858,8 @@ onUnmounted(() => {
   clip: rect(0, 0, 0, 0);
   border: 0;
 }
-
-/* ===== Bottom Navigation (Mobile) ===== */
-.bottom-nav {
-  display: none;
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 56px;
-  background: var(--c-bg-elevated);
-  border-top: 1px solid var(--c-border);
-  padding-bottom: env(safe-area-inset-bottom);
-  z-index: var(--z-header);
-}
-
-.bottom-nav-btn {
-  position: relative;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--c-text-secondary);
-  font-size: 22px;
-  cursor: pointer;
-  transition: color var(--transition-fast);
-}
-.bottom-nav-btn:active {
-  color: var(--c-accent);
-}
-
-/* ===== Context Menu ===== */
-.context-menu {
-  position: fixed;
-  z-index: 500;
-  min-width: 180px;
-  background: var(--c-bg-elevated);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  padding: var(--space-1) 0;
-  overflow: hidden;
-}
-
-.ctx-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border: none;
-  background: transparent;
-  color: var(--c-text);
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-.ctx-item:hover {
-  background: var(--c-bg-hover);
-}
-.ctx-item--danger {
-  color: var(--c-danger);
-}
-.ctx-item--danger:hover {
-  background: rgba(239, 68, 68, 0.1);
-}
-
-.ctx-sep {
-  height: 1px;
-  background: var(--c-border);
-  margin: var(--space-1) 0;
-}
-
-.ctx-enter-active,
-.ctx-leave-active {
-  transition: all 150ms ease;
-}
-.ctx-enter-from,
-.ctx-leave-to {
-  opacity: 0;
-  transform: scale(0.95);
-}
-
-/* ===== Keyboard Shortcuts Modal ===== */
-.shortcuts-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.shortcut-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--c-border);
-}
-.shortcut-item:last-child {
-  border-bottom: none;
-}
-
-.shortcut-kbd {
-  display: inline-flex;
-  padding: var(--space-1) var(--space-2);
-  background: var(--c-bg);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--c-text);
-  box-shadow: 0 1px 0 var(--c-border);
-  min-width: 80px;
-  justify-content: center;
-}
-
-.shortcut-desc {
-  font-size: var(--text-sm);
-  color: var(--c-text-secondary);
-}
-
-/* ===== Change Password Modal ===== */
-.chpw-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.chpw-form .form-field {
-  margin-bottom: 0;
-}
-
-.chpw-form .form-field-label {
-  display: block;
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--c-text-secondary);
-  margin-bottom: var(--space-1);
-}
-
-.chpw-form .form-field-input {
-  width: 100%;
-  height: 40px;
-  padding: 0 var(--space-3);
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-md);
-  background: var(--c-surface);
-  color: var(--c-text);
-  font-family: var(--font-sans);
-  font-size: var(--text-base);
-  outline: none;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-.chpw-form .form-field-input:focus {
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-}
-.chpw-form .form-field-input[readonly] {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.chpw-form .input-error {
-  border-color: var(--c-danger) !important;
-}
-.chpw-form .input-error:focus {
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
-}
-
-.chpw-hint {
-  font-size: var(--text-sm);
-  color: var(--c-text-secondary);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.chpw-error {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background: color-mix(in srgb, var(--c-danger) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--c-danger) 30%, transparent);
-  border-radius: var(--radius-md);
-  color: var(--c-danger);
-  font-size: var(--text-sm);
-}
-
-/* ===== Modal shared (footer & buttons) ===== */
-.modal-footer-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  width: 100%;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--text-base);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-.action-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.action-btn--primary {
-  background: var(--c-accent);
-  color: white;
-}
-.action-btn--primary:hover:not(:disabled) {
-  background: var(--c-accent-hover);
-}
-
-.action-btn--ghost {
-  background: transparent;
-  color: var(--c-text-secondary);
-  border: 1px solid var(--c-border);
-}
-.action-btn--ghost:hover:not(:disabled) {
-  background: var(--c-bg-hover);
-  color: var(--c-text);
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-.spin { animation: spin 1s linear infinite; }
-
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
-  .sidebar {
-    display: none;
-  }
-  .bottom-nav {
-    display: flex;
-  }
   .app-shell {
     padding-bottom: 56px;
   }

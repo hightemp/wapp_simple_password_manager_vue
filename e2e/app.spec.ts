@@ -51,7 +51,7 @@ test.describe('CRUD Operations', () => {
     // Edit modal should appear
     await expect(page.locator('.modal-panel')).toBeVisible()
 
-    // Fill in fields (the form fields are dynamic based on oStructure)
+    // Fill in fields (the form fields are dynamic based on db.structure)
     const inputs = page.locator('.form-field-input')
     const inputCount = await inputs.count()
 
@@ -460,8 +460,8 @@ test.describe('Auto Lock', () => {
           if (pinia) {
             const dbStore = pinia.state.value.database
             if (dbStore) {
-              dbStore.sPassword = ''
-              dbStore.bShowRepoWindow = true
+              dbStore.masterPassword = ''
+              dbStore.isRepoWindowOpen = true
             }
           }
         }
