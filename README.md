@@ -2,16 +2,33 @@
 
 A self-hosted, encrypted password manager built with Vue 3. Store your passwords securely in LocalStorage, GitHub, WebDAV, or Google Drive with zero-knowledge AES-256 encryption.
 
-![Password Manager — Light Theme](images/screenshot-light.png)
+![Password Manager — category tree and entries](images/desktop-main.png)
 
-![Password Manager — Dark Theme](images/screenshot-dark.png)
+<table>
+  <tr>
+    <td width="50%"><img src="images/desktop-category.png" alt="Category selected, several rows selected, password revealed"><br><sub>Category filter, multi-select, revealed password</sub></td>
+    <td width="50%"><img src="images/desktop-editor.png" alt="Entry editor with category suggestions"><br><sub>Entry editor with category suggestions</sub></td>
+  </tr>
+  <tr>
+    <td><img src="images/desktop-generator.png" alt="Password generator"><br><sub>Password generator</sub></td>
+    <td><img src="images/desktop-repositories.png" alt="Repository settings"><br><sub>Repositories: LocalStorage, GitHub, WebDAV, Google Drive</sub></td>
+  </tr>
+</table>
 
 <details>
-<summary>📱 Mobile View</summary>
+<summary>📱 Mobile</summary>
 
-![Password Manager — Mobile](images/screenshot-mobile.png)
+<table>
+  <tr>
+    <td><img src="images/mobile-list.png" alt="Mobile: entry list" width="260"><br><sub>Entries with search</sub></td>
+    <td><img src="images/mobile-details.png" alt="Mobile: entry details" width="260"><br><sub>Entry details</sub></td>
+    <td><img src="images/mobile-categories.png" alt="Mobile: category picker" width="260"><br><sub>Categories</sub></td>
+  </tr>
+</table>
 
 </details>
+
+Screenshots use fictional demo data and are regenerated with `npm run screenshots`.
 
 ## Features
 
