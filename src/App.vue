@@ -161,7 +161,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, useTemplateRef, provide, reactive, nextTick } from 'vue'
-import { useDatabaseStore, type Entry } from '@/stores/database'
+import { useDatabaseStore, parseDatabase, type Entry } from '@/stores/database'
 import { useReposStore } from '@/stores/repos'
 import { debounce } from '@/utils/debounce'
 import { NOTIFY_KEY, type NotifyFn } from '@/composables/useNotify'
@@ -411,12 +411,32 @@ function openChangePassword() {
   showChangePassword.value = true
 }
 
-function importDatabase() {
-  const file = importInput.value?.files?.[0]
-  if (!file) return
-  const reader = new FileReader()
-  reader.readAsText(file)
-  reader.onload = () => db.importDatabase(reader.result as string)
+async function importDatabase() {
+  const input = importInput.value
+  const file = input?.files?.[0]
+  if (!input || !file) return
+
+  try {
+    const json = await file.text()
+    // Validate before asking, so an invalid file never prompts to overwrite
+    const imported = parseDatabase(json)
+    const currentCount = table.value.data.length
+    const importedCount = imported[TABLE_NAME].data.length
+    if (currentCount > 0 && !confirm(
+      `Replace the current ${currentCount} entries with ${importedCount} entries from "${file.name}"?\n\n` +
+      'The change is not saved to repositories until you press Save.'
+    )) return
+
+    db.importDatabase(json)
+    selectedEntry.value = null
+    revealedRows.clear()
+    notify('Imported', `${importedCount} entries loaded — press Save to store them`, 'success')
+  } catch (error) {
+    notify('Import failed', error instanceof Error ? error.message : String(error), 'error', 8000)
+  } finally {
+    // Allow picking the same file again
+    input.value = ''
+  }
 }
 
 function toggleTheme() {

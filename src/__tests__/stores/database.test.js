@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useDatabaseStore } from '../../stores/database'
+import { useDatabaseStore, parseDatabase } from '../../stores/database'
 import { useReposStore } from '../../stores/repos'
 
 describe('Database Store (Pinia)', () => {
@@ -230,6 +230,55 @@ describe('Database Store (Pinia)', () => {
       await expect(db.lock()).rejects.toThrow(/offline/)
       expect(db.masterPassword).toBe('')
       expect(db.database.table.data).toEqual([])
+    })
+  })
+
+  describe('import', () => {
+    const valid = {
+      table: {
+        last_index: 2,
+        page: 3,
+        data: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }],
+        selection_id: 5,
+        filter: { name: 'x' },
+      },
+    }
+
+    it('should import a valid database and mark it unsaved', () => {
+      db.importDatabase(JSON.stringify(valid))
+      expect(db.database.table.data.map((e) => e.name)).toEqual(['A', 'B'])
+      expect(db.database.table.page).toBe(1)
+      expect(db.unsavedChanges).toBe(1)
+    })
+
+    it('should keep the current database when the file is invalid', () => {
+      db.importDatabase(JSON.stringify(valid))
+      expect(() => db.importDatabase('{"foo": 1}')).toThrow(/missing "table"/)
+      expect(db.database.table.data.length).toBe(2)
+    })
+
+    it.each([
+      ['not json', /not valid JSON/],
+      ['[]', /missing "table"/],
+      ['{"table": {"data": {}}}', /must be a list/],
+      ['{"table": {"data": [1]}}', /Entry #1 is not an object/],
+    ])('should reject %s', (json, message) => {
+      expect(() => parseDatabase(json)).toThrow(message)
+    })
+
+    it('should assign ids to entries without one and fix last_index', () => {
+      const result = parseDatabase(JSON.stringify({
+        table: { last_index: 1, data: [{ id: 7, name: 'A' }, { name: 'B' }, { id: 7, name: 'dup' }] },
+      }))
+      expect(result.table.data.map((e) => e.id)).toEqual([7, 8, 9])
+      expect(result.table.last_index).toBe(9)
+    })
+
+    it('should fill defaults for missing fields', () => {
+      const result = parseDatabase('{"table": {"data": []}}')
+      expect(result.table.last_index).toBe(0)
+      expect(result.table.page).toBe(1)
+      expect(result.table.filter.name).toBe('')
     })
   })
 })

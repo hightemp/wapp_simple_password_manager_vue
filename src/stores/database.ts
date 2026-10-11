@@ -49,6 +49,71 @@ function createEmptyDatabase(): Database {
   }
 }
 
+/**
+ * Parse and validate an exported database (plain JSON).
+ * Missing optional fields get defaults; entries without an id get a new one.
+ * Throws an Error with a user-readable message when the file is not a database.
+ */
+export function parseDatabase(json: string): Database {
+  let parsed: any
+  try {
+    parsed = JSON.parse(json)
+  } catch (_) {
+    throw new Error('The file is not valid JSON')
+  }
+
+  const table = parsed?.table
+  if (!table || typeof table !== 'object' || Array.isArray(table)) {
+    throw new Error('The file is not a password database (missing "table")')
+  }
+  if (!Array.isArray(table.data)) {
+    throw new Error('The file is not a password database ("table.data" must be a list)')
+  }
+
+  const entries: Entry[] = table.data.map((entry: unknown, index: number) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`Entry #${index + 1} is not an object`)
+    }
+    const result: Entry = {}
+    for (const [key, value] of Object.entries(entry)) {
+      result[key] = key === 'id' ? value : value == null ? '' : String(value)
+    }
+    return result
+  })
+
+  // Assign ids to entries without one, keeping existing ids unique
+  const usedIds = new Set<number>()
+  let lastIndex = Number.isInteger(table.last_index) ? table.last_index : 0
+  for (const entry of entries) {
+    if (Number.isInteger(entry.id) && !usedIds.has(entry.id!)) {
+      usedIds.add(entry.id!)
+      lastIndex = Math.max(lastIndex, entry.id!)
+    } else {
+      delete entry.id
+    }
+  }
+  for (const entry of entries) {
+    if (entry.id === undefined) entry.id = ++lastIndex
+  }
+
+  const filter = emptyFields()
+  if (table.filter && typeof table.filter === 'object') {
+    for (const [key, value] of Object.entries(table.filter)) {
+      if (typeof value === 'string') filter[key] = value
+    }
+  }
+
+  return {
+    table: {
+      last_index: lastIndex,
+      page: 1,
+      data: entries,
+      selection_id: null,
+      filter,
+    },
+  }
+}
+
 function createEmptyForms(): Record<string, Record<string, any>> {
   return { table: emptyFields() }
 }
@@ -142,8 +207,10 @@ export const useDatabaseStore = defineStore('database', () => {
     downloadJson('passwords-database', JSON.stringify(database.value, null, 4))
   }
 
+  /** Replace the database with an exported file; throws if the file is invalid */
   function importDatabase(json: string) {
-    setDatabase(JSON.parse(json))
+    setDatabase(parseDatabase(json))
+    unsavedChanges.value++
   }
 
   function connectToCurrentRepo() {
