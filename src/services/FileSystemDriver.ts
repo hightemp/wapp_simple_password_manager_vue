@@ -23,6 +23,22 @@ export interface ReadResult {
   sha: string
 }
 
+/** The requested file does not exist in the repo */
+export class NotFoundError extends Error {
+  constructor(path: string, options?: ErrorOptions) {
+    super(`Not Found: ${path}`, options)
+    this.name = 'NotFoundError'
+  }
+}
+
+/** Convert HTTP 404 errors from GitHub / WebDAV clients into NotFoundError */
+function rethrowNotFound(error: any, path: string): never {
+  if (error?.status === 404 || error?.response?.status === 404) {
+    throw new NotFoundError(path, { cause: error })
+  }
+  throw error
+}
+
 function trimLeadingSlashes(path: string): string {
   return path.replace(/^\/+/, '')
 }
@@ -68,7 +84,7 @@ export class FileSystemDriver {
 
   async readEncryptedJson(path: string, password: string): Promise<unknown> {
     const { data } = await this.readFile(path)
-    if (!data) throw new Error('Not Found')
+    if (!data) throw new NotFoundError(path)
     const decrypted = await decrypt(data, password)
     try {
       return JSON.parse(decrypted)
@@ -116,12 +132,6 @@ export class FileSystemDriver {
     return Promise.reject(new Error(`Unknown repo type: ${this.repo.type}`))
   }
 
-  async createDir(path: string): Promise<void> {
-    if (this.repo.type == 'webdav') {
-      await this.webdav!.createDirectory(path)
-    }
-  }
-
   // ===============================================================
   // Local Storage
   // ===============================================================
@@ -148,7 +158,7 @@ export class FileSystemDriver {
       owner: this.repo.login!,
       repo: this.repo.repo!,
       path,
-    })
+    }).catch((error: unknown) => rethrowNotFound(error, path))
     this.fileIds[path] = data.sha
     return { data: decode(data.content), sha: data.sha }
   }
@@ -210,7 +220,8 @@ export class FileSystemDriver {
   // ===============================================================
 
   async readWebdav(path: string): Promise<ReadResult> {
-    const buffer = await this.webdav!.getFileContents(path) as ArrayBuffer
+    const buffer = await this.webdav!.getFileContents(path)
+      .catch((error: unknown) => rethrowNotFound(error, path)) as ArrayBuffer
     this.fileIds[path] = ''
     return { data: new TextDecoder('utf-8').decode(buffer), sha: '' }
   }
@@ -237,7 +248,7 @@ export class FileSystemDriver {
 
     const fileId = await googleDrive.findFile(token, trimLeadingSlashes(path), clientId)
     if (!fileId) {
-      throw new Error('Not Found')
+      throw new NotFoundError(path)
     }
 
     const data = await googleDrive.readFile(token, fileId)

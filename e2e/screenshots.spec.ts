@@ -46,7 +46,6 @@ async function addDemoEntries(page: Page) {
     const urlInput = inputs.nth(4)
     if (await urlInput.count()) await urlInput.fill(entry.url)
     // Description (index 5 — textarea)
-    const descInput = page.locator('.modal-panel .form-field-input, .modal-panel textarea').last()
     // Try filling the textarea via the 5th form-field-input or a textarea
     const textarea = page.locator('.modal-panel textarea')
     if (await textarea.count()) await textarea.fill(entry.description)

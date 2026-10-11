@@ -141,13 +141,13 @@ To use Google Drive as a storage backend:
 
 ### GitHub Pages
 
-The project includes a GitHub Actions workflow (`.github/workflows/deploy.yml`) that automatically builds and deploys to GitHub Pages on push to `main`.
+The GitHub Actions workflow (`.github/workflows/deploy.yml`) runs lint, type-check, unit and E2E tests, then builds and deploys to GitHub Pages on every push to `main`. The build output is not committed — in the repository settings, **Pages → Source** must be set to **GitHub Actions**.
 
 ### Self-Hosted
 
 ```bash
 npm run build
-# Serve the `docs/` directory with any static file server
+# Serve the `dist/` directory with any static file server (HTTPS required)
 ```
 
 ## Project Structure

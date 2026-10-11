@@ -16,13 +16,16 @@ export default defineConfig({
   },
 
   projects: [
+    // Most tests drive the desktop sidebar; mobile-only flows are tagged @mobile
     {
       name: 'Desktop Chrome',
       use: { ...devices['Desktop Chrome'] },
+      grepInvert: /@mobile/,
     },
     {
       name: 'Mobile Chrome',
       use: { ...devices['Pixel 5'] },
+      grep: /@mobile/,
     },
   ],
 

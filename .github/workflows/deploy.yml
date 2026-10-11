@@ -25,6 +25,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
       - run: npm test
 
   e2e:
@@ -65,6 +67,6 @@ jobs:
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: docs
+          path: dist
       - id: deployment
         uses: actions/deploy-pages@v4

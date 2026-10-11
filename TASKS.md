@@ -1,5 +1,7 @@
 # TASKS
 
+> **Примечание (2026-10-11):** это история задач. Структура проекта и имена с тех пор изменились: файлы переехали в `src/services/`, `src/utils/`, `src/components/` (PascalCase), функции и переменные переименованы без венгерской нотации (`fnReadFile` → `readFile`, `oSHA` → `fileIds` и т.д.). Актуальная структура — в README.
+
 ## Архитектура и безопасность (завершено)
 
 - [x] Заменить Vuex на Pinia — `src/stores/repos.ts` + `src/stores/database.ts`, Vuex полностью удалён

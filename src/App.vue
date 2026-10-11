@@ -136,7 +136,7 @@
       :x="contextMenu.x"
       :y="contextMenu.y"
       @copy="(field) => copyField(contextMenu.entry, field)"
-      @edit="db.openEditWindow(TABLE_NAME, contextMenu.entry)"
+      @edit="db.openEditWindow(contextMenu.entry)"
       @delete="deleteEntry(contextMenu.entry)"
       @close="closeContextMenu"
     />
@@ -153,7 +153,7 @@
 
   <input type="file" ref="importInput" class="sr-only" @change="importDatabase" />
 
-  <EntryEditModal title="Edit Entry" :form-name="TABLE_NAME" :table-name="TABLE_NAME" />
+  <EntryEditModal title="Edit Entry" />
   <RepoSettingsModal />
   <!-- After other modals so it stacks on top of them -->
   <ConfirmDialog ref="confirmDialog" />
@@ -182,7 +182,6 @@ import NotificationToast from '@/components/NotificationToast.vue'
 import LoaderOverlay from '@/components/LoaderOverlay.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
-const TABLE_NAME = 'table'
 const AUTO_LOCK_TIMEOUT = 5 * 60 * 1000
 // localStorage key kept as-is so the saved theme survives the rename
 const THEME_STORAGE_KEY = 'bDarkTheme'
@@ -230,8 +229,8 @@ const sortAsc = ref(true)
 const contextMenu = reactive({ entry: null as any, x: 0, y: 0 })
 
 // --- computed ---
-const columns = computed(() => db.structure[TABLE_NAME])
-const table = computed(() => db.database[TABLE_NAME])
+const columns = computed(() => db.columns)
+const table = computed(() => db.table)
 
 const gridStyle = computed(() => {
   const widths = Object.keys(columns.value).map((key) => COLUMN_WIDTHS[key] ?? 'minmax(80px, 1fr)')
@@ -322,7 +321,7 @@ function toggleSort(key: string) {
 }
 
 const onFilterInput = debounce((event: Event, key: string) => {
-  db.setFilter(TABLE_NAME, key, (event.target as HTMLInputElement).value)
+  db.setFilter(key, (event.target as HTMLInputElement).value)
   // Reset to page 1 when filter changes so rows aren't out of range
   page.value = 1
 }, 300)
@@ -384,7 +383,7 @@ function selectPrev() {
 
 // --- entry actions ---
 function addEntry() {
-  db.openEditWindow(TABLE_NAME, {})
+  db.openEditWindow({})
 }
 
 function notifyNoSelection() {
@@ -393,7 +392,7 @@ function notifyNoSelection() {
 
 function editSelected() {
   if (selectedEntry.value) {
-    db.openEditWindow(TABLE_NAME, selectedEntry.value)
+    db.openEditWindow(selectedEntry.value)
   } else {
     notifyNoSelection()
   }
@@ -408,7 +407,7 @@ async function deleteEntry(entry: any) {
     danger: true,
   })
   if (!confirmed) return
-  db.removeEntry(TABLE_NAME, entry)
+  db.removeEntry(entry)
   if (selectedEntry.value?.id === entry.id) selectedEntry.value = null
 }
 
@@ -450,7 +449,7 @@ async function importDatabase() {
     // Validate before asking, so an invalid file never prompts to overwrite
     const imported = parseDatabase(json)
     const currentCount = table.value.data.length
-    const importedCount = imported[TABLE_NAME].data.length
+    const importedCount = imported.table.data.length
     if (currentCount > 0 && !await confirmAction({
       title: 'Replace database',
       message: `Replace the current ${currentCount} entries with ${importedCount} entries from "${file.name}"?\n\n` +

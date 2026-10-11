@@ -1,16 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // We'll import the module after creating it — for now define the expected API shape
-// and mock the global dependencies (fetch, google.accounts.oauth2)
+// and mock the global dependencies (fetch, globalThis.google.accounts.oauth2)
 
-// === Mock google.accounts.oauth2 ===
+// === Mock globalThis.google.accounts.oauth2 ===
 let mockTokenCallback = null
-let mockErrorCallback = null
-let mockRequestAccessTokenOpts = null
 
 const mockTokenClient = {
-  requestAccessToken: vi.fn((opts) => {
-    mockRequestAccessTokenOpts = opts
+  requestAccessToken: vi.fn(() => {
     // Simulate async callback — invoke on next tick
     if (mockTokenCallback) {
       setTimeout(() => mockTokenCallback({
@@ -29,7 +26,6 @@ function setupGoogleMock() {
       oauth2: {
         initTokenClient: vi.fn((config) => {
           mockTokenCallback = config.callback
-          mockErrorCallback = config.error_callback
           return mockTokenClient
         }),
       },
@@ -40,8 +36,6 @@ function setupGoogleMock() {
 function cleanupGoogleMock() {
   delete globalThis.google
   mockTokenCallback = null
-  mockErrorCallback = null
-  mockRequestAccessTokenOpts = null
 }
 
 // === Test suite ===
@@ -72,7 +66,7 @@ describe('googleDrive', () => {
     it('should return access_token from GIS callback', async () => {
       const token = await gd.requestToken('test-client-id.apps.googleusercontent.com')
       expect(token).toBe('ya29.mock-token-12345')
-      expect(google.accounts.oauth2.initTokenClient).toHaveBeenCalledWith(
+      expect(globalThis.google.accounts.oauth2.initTokenClient).toHaveBeenCalledWith(
         expect.objectContaining({
           client_id: 'test-client-id.apps.googleusercontent.com',
           scope: 'https://www.googleapis.com/auth/drive.appdata',
@@ -82,7 +76,7 @@ describe('googleDrive', () => {
 
     it('should reject when GIS returns error', async () => {
       // Override initTokenClient to return error in callback
-      google.accounts.oauth2.initTokenClient = vi.fn((config) => ({
+      globalThis.google.accounts.oauth2.initTokenClient = vi.fn((config) => ({
         requestAccessToken: vi.fn(() => {
           setTimeout(() => config.callback({
             error: 'access_denied',

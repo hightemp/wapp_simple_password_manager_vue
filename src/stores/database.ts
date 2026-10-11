@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { downloadJson } from '@/utils/download'
 import { DecryptionError } from '@/utils/crypto'
-import type { FileSystemDriver } from '@/services/FileSystemDriver'
+import { NotFoundError, type FileSystemDriver } from '@/services/FileSystemDriver'
 import { useReposStore } from './repos'
 
 export const DATABASE_PATH = 'passwords-database'
@@ -25,16 +25,27 @@ export interface Table {
   filter: Record<string, string>
 }
 
-export type Database = Record<string, Table>
+/** Shape of the (encrypted) database file — field names are part of the file format */
+export interface Database {
+  table: Table
+}
+
+// Table columns in display order
+export const COLUMNS: Record<string, Column> = {
+  category: { label: 'Category', type: 'text' },
+  name: { label: 'Name', type: 'text' },
+  login: { label: 'Login', type: 'text' },
+  password: { label: 'Password', type: 'text' },
+  url: { label: 'URL', type: 'text' },
+  description: { label: 'Description', type: 'textarea' },
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-const FIELD_NAMES = ['category', 'name', 'login', 'password', 'url', 'description']
-
 function emptyFields(): Record<string, string> {
-  return Object.fromEntries(FIELD_NAMES.map((name) => [name, '']))
+  return Object.fromEntries(Object.keys(COLUMNS).map((name) => [name, '']))
 }
 
 function createEmptyDatabase(): Database {
@@ -51,17 +62,23 @@ function createEmptyDatabase(): Database {
 
 /**
  * Parse and validate an exported database (plain JSON).
- * Missing optional fields get defaults; entries without an id get a new one.
  * Throws an Error with a user-readable message when the file is not a database.
  */
 export function parseDatabase(json: string): Database {
-  let parsed: any
+  let parsed: unknown
   try {
     parsed = JSON.parse(json)
-  } catch (_) {
-    throw new Error('The file is not valid JSON')
+  } catch (error) {
+    throw new Error('The file is not valid JSON', { cause: error })
   }
+  return normalizeDatabase(parsed)
+}
 
+/**
+ * Validate a decoded database and fill in defaults.
+ * Entries without an id (or with a duplicate one) get a new id.
+ */
+export function normalizeDatabase(parsed: any): Database {
   const table = parsed?.table
   if (!table || typeof table !== 'object' || Array.isArray(table)) {
     throw new Error('The file is not a password database (missing "table")')
@@ -114,37 +131,22 @@ export function parseDatabase(json: string): Database {
   }
 }
 
-function createEmptyForms(): Record<string, Record<string, any>> {
-  return { table: emptyFields() }
-}
-
-function createClosedEditWindows(): Record<string, { isOpen: boolean; item: Entry }> {
-  return { table: { isOpen: false, item: {} } }
+function createClosedEditWindow(): { isOpen: boolean; item: Entry } {
+  return { isOpen: false, item: {} }
 }
 
 export const useDatabaseStore = defineStore('database', () => {
   // --- state ---
   const masterPassword = ref('')
 
-  // Column definitions per table
-  const structure = ref<Record<string, Record<string, Column>>>({
-    table: {
-      category: { label: 'Category', type: 'text' },
-      name: { label: 'Name', type: 'text' },
-      login: { label: 'Login', type: 'text' },
-      password: { label: 'Password', type: 'text' },
-      url: { label: 'URL', type: 'text' },
-      description: { label: 'Description', type: 'textarea' },
-    },
-  })
-
-  // Persisted (encrypted) database — field names are part of the file format
+  // Decrypted database
   const database = ref<Database>(createEmptyDatabase())
 
-  // Values of the edit form fields per form
-  const forms = ref<Record<string, Record<string, any>>>(createEmptyForms())
+  // Values of the entry edit form
+  const form = ref<Record<string, string>>(emptyFields())
 
-  const editWindows = ref<Record<string, { isOpen: boolean; item: Entry }>>(createClosedEditWindows())
+  // Entry being edited ({} while adding a new one)
+  const editWindow = ref(createClosedEditWindow())
 
   const unsavedChanges = ref(0)
 
@@ -154,52 +156,45 @@ export const useDatabaseStore = defineStore('database', () => {
   const connectionError = ref('')
 
   // --- getters ---
-  function getFormField(formName: string, fieldName: string) {
-    return forms.value[formName][fieldName]
-  }
+  const table = computed(() => database.value.table)
 
   // --- actions ---
-  function setFormField(formName: string, fieldName: string, value: unknown) {
-    forms.value[formName][fieldName] = value
+  function setFormField(fieldName: string, value: string) {
+    form.value[fieldName] = value
   }
 
-  function setFilter(tableName: string, fieldName: string, value: string) {
-    database.value[tableName].filter[fieldName] = value
+  function setFilter(fieldName: string, value: string) {
+    table.value.filter[fieldName] = value
   }
 
   function setDatabase(newDatabase: Database) {
     database.value = newDatabase
   }
 
-  function openEditWindow(formName: string, item: Entry) {
-    editWindows.value[formName].isOpen = true
-    editWindows.value[formName].item = item
-    for (const fieldName in forms.value[formName]) {
-      forms.value[formName][fieldName] = fieldName in item ? item[fieldName] : ''
+  function openEditWindow(item: Entry) {
+    editWindow.value = { isOpen: true, item }
+    for (const fieldName in form.value) {
+      form.value[fieldName] = fieldName in item ? item[fieldName] : ''
     }
   }
 
-  function closeEditWindow(formName: string) {
-    editWindows.value[formName].isOpen = false
+  function closeEditWindow() {
+    editWindow.value.isOpen = false
   }
 
   /** Copy form values into the edited item; new items get an id and are appended to the table */
-  function saveEditWindow(tableName: string, formName: string) {
-    const item = editWindows.value[formName].item
-    for (const fieldName in forms.value[formName]) {
-      item[fieldName] = forms.value[formName][fieldName]
-    }
+  function saveEditWindow() {
+    const item = editWindow.value.item
+    Object.assign(item, form.value)
     if (!item.id) {
-      item.id = ++database.value[tableName].last_index
-      database.value[tableName].data.push(item)
+      item.id = ++table.value.last_index
+      table.value.data.push(item)
     }
     unsavedChanges.value++
   }
 
-  function removeEntry(tableName: string, entry: Entry) {
-    database.value[tableName].data = database.value[tableName].data.filter(
-      (other) => other.id != entry.id
-    )
+  function removeEntry(entry: Entry) {
+    table.value.data = table.value.data.filter((other) => other.id != entry.id)
     unsavedChanges.value++
   }
 
@@ -264,44 +259,45 @@ export const useDatabaseStore = defineStore('database', () => {
     isRepoWindowOpen.value = true
   }
 
-  function loadDatabase() {
+  async function loadDatabase(): Promise<void> {
     const fileSystem = useReposStore().currentFileSystem!
     connectionError.value = ''
     isLoading.value = true
-    fileSystem
-      .readEncryptedJson(DATABASE_PATH, masterPassword.value)
-      .then((data) => {
-        if (!data) throw 'Cannot destructure property'
-        setDatabase(data as Database)
-        isLoading.value = false
-      })
-      .catch((error: unknown) => {
-        const message = error + ''
-        if (error instanceof DecryptionError) {
-          showConnectionError('Incorrect password (or the database file is damaged). Please check your master password and try again.')
-          return
-        }
-        // No database yet — create new one
-        if (
-          message.match(/Cannot destructure property/) ||
-          message.match(/Not Found/)
-        ) {
-          fileSystem
-            .writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
-            .then(() => {
-              fileSystem
-                .readEncryptedJson(DATABASE_PATH, masterPassword.value)
-                .then((data) => {
-                  setDatabase(data as Database)
-                  isLoading.value = false
-                })
-                .catch(() => showConnectionError('Failed to read the newly created database.'))
-            })
-            .catch(() => showConnectionError('Failed to create new database.'))
-          return
-        }
-        showConnectionError('Connection failed: ' + message)
-      })
+
+    let data: unknown
+    try {
+      data = await fileSystem.readEncryptedJson(DATABASE_PATH, masterPassword.value)
+    } catch (error) {
+      if (error instanceof DecryptionError) {
+        showConnectionError('Incorrect password (or the database file is damaged). Please check your master password and try again.')
+      } else if (error instanceof NotFoundError) {
+        await createDatabase(fileSystem)
+      } else {
+        showConnectionError('Connection failed: ' + errorMessage(error))
+      }
+      return
+    }
+
+    try {
+      setDatabase(normalizeDatabase(data))
+      isLoading.value = false
+    } catch (error) {
+      showConnectionError('The database file is damaged: ' + errorMessage(error))
+    }
+  }
+
+  /**
+   * Repo has no database yet — write the one currently in memory: empty on a fresh
+   * start, or the open database when switching to a new repo (copies it there).
+   */
+  async function createDatabase(fileSystem: FileSystemDriver): Promise<void> {
+    try {
+      await fileSystem.writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
+    } catch (error) {
+      showConnectionError('Failed to create new database: ' + errorMessage(error))
+      return
+    }
+    isLoading.value = false
   }
 
   /**
@@ -321,8 +317,8 @@ export const useDatabaseStore = defineStore('database', () => {
 
     masterPassword.value = ''
     database.value = createEmptyDatabase()
-    forms.value = createEmptyForms()
-    editWindows.value = createClosedEditWindows()
+    form.value = emptyFields()
+    editWindow.value = createClosedEditWindow()
     unsavedChanges.value = 0
     isRepoWindowOpen.value = true
 
@@ -331,15 +327,15 @@ export const useDatabaseStore = defineStore('database', () => {
 
   return {
     masterPassword,
-    structure,
+    columns: COLUMNS,
     database,
-    forms,
-    editWindows,
+    table,
+    form,
+    editWindow,
     unsavedChanges,
     isLoading,
     isRepoWindowOpen,
     connectionError,
-    getFormField,
     setFormField,
     setFilter,
     setDatabase,

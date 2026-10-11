@@ -83,35 +83,6 @@ const model = computed({
   margin-bottom: var(--space-4);
 }
 
-.form-field-label {
-  display: block;
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--c-text-secondary);
-  margin-bottom: var(--space-1);
-}
-
-.form-field-input {
-  width: 100%;
-  height: 40px;
-  padding: 0 var(--space-3);
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-md);
-  background: var(--c-surface);
-  color: var(--c-text);
-  font-family: var(--font-sans);
-  font-size: var(--text-base);
-  outline: none;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-.form-field-input:focus {
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-}
-.form-field-input::placeholder {
-  color: var(--c-text-muted);
-}
-
 .form-field-textarea {
   height: auto;
   padding: var(--space-2) var(--space-3);

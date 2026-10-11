@@ -532,36 +532,65 @@ test.describe('Import & Export', () => {
   })
 })
 
-test.describe('Mobile Viewport', () => {
-  test.use({ viewport: { width: 375, height: 812 } })
-
-  test('should show bottom nav and hide sidebar on mobile', async ({ page }) => {
+test.describe('Mobile Viewport', { tag: '@mobile' }, () => {
+  test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await connectLocalStorage(page)
+  })
 
-    // Sidebar should NOT be visible on mobile
-    const sidebar = page.locator('.sidebar')
-    await expect(sidebar).not.toBeVisible()
+  async function addEntryViaBottomNav(page: Page, name: string) {
+    await page.locator('.bottom-nav [aria-label="Add"]').click()
+    await expect(page.locator('.modal-panel')).toBeVisible()
+    await page.locator('.modal-panel .form-field-input').nth(1).fill(name)
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+  }
 
-    // Bottom nav should be visible
+  test('should show bottom nav and hide sidebar on mobile', async ({ page }) => {
+    await expect(page.locator('.sidebar')).not.toBeVisible()
+
     const bottomNav = page.locator('.bottom-nav')
     await expect(bottomNav).toBeVisible()
-
-    // Bottom nav should have action buttons
     await expect(bottomNav.locator('[aria-label="Add"]')).toBeVisible()
     await expect(bottomNav.locator('[aria-label="Save"]')).toBeVisible()
     await expect(bottomNav.locator('[aria-label="Repository"]')).toBeVisible()
+  })
 
-    // Add entry via bottom nav
-    await bottomNav.locator('[aria-label="Add"]').click()
+  test('should add an entry via bottom nav', async ({ page }) => {
+    await addEntryViaBottomNav(page, 'Mobile Test')
+    await expect(page.locator('.grid-row:has-text("Mobile Test")')).toBeVisible()
+  })
+
+  test('should edit an entry with a double tap', async ({ page }) => {
+    await addEntryViaBottomNav(page, 'Before Edit')
+    await page.locator('.grid-row:has-text("Before Edit")').dblclick()
     await expect(page.locator('.modal-panel')).toBeVisible()
-    const inputs = page.locator('.modal-panel .form-field-input')
-    await inputs.nth(1).fill('Mobile Test')
-    await page.locator('button:has-text("Save")').click()
-    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+    await page.locator('.modal-panel .form-field-input').nth(1).fill('After Edit')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.grid-row:has-text("After Edit")')).toBeVisible()
+  })
 
-    // Entry should appear
-    await expect(page.locator('text=Mobile Test')).toBeVisible()
+  test('should delete an entry via the context menu', async ({ page }) => {
+    await addEntryViaBottomNav(page, 'Mobile Delete')
+    // Long press fires `contextmenu` on mobile browsers
+    await page.locator('.grid-row:has-text("Mobile Delete")').click({ button: 'right' })
+    await page.locator('.context-menu button:has-text("Delete")').click()
+    await page.locator('.modal-panel button:has-text("Delete")').click()
+    await expect(page.locator('.grid-row:has-text("Mobile Delete")')).toHaveCount(0)
+  })
+
+  test('should save via bottom nav and reopen repository settings', async ({ page }) => {
+    await addEntryViaBottomNav(page, 'Mobile Save')
+    await page.locator('.bottom-nav [aria-label="Save"]').click()
+    await expect(page.locator('.notification:has-text("Saved")')).toBeVisible()
+
+    await page.locator('.bottom-nav [aria-label="Repository"]').click()
+    await expect(page.locator('.modal-panel:has-text("Repository Settings")')).toBeVisible()
+  })
+
+  test('should toggle the theme via bottom nav', async ({ page }) => {
+    await page.locator('.bottom-nav [aria-label="Dark theme"]').click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   })
 })
 
@@ -640,7 +669,6 @@ test.describe('Escape Key Behavior', () => {
     await page.locator('.data-grid').focus()
     await page.keyboard.press('ArrowDown')
 
-    const rows = page.locator('.grid-row:not(.grid-header)')
     // One of the rows should be active
     const activeRow = page.locator('.grid-row.active')
     await expect(activeRow).toHaveCount(1)

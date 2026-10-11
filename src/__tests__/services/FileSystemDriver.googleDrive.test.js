@@ -70,7 +70,6 @@ describe('FileSystemDriver — googledrive type', () => {
 
   it('readFile should route to googledrive handler', async () => {
     // Mock: findFile returns a file id, readFile returns content
-    let callIdx = 0
     globalThis.fetch = vi.fn().mockImplementation((url) => {
       if (url.includes('spaces=appDataFolder')) {
         return Promise.resolve({
@@ -123,7 +122,7 @@ describe('FileSystemDriver — googledrive type', () => {
 
     await driver.writeFile('passwords-database', 'some-encrypted-data')
     // Should have called create (POST)
-    const postCall = fetch.mock.calls.find(([url, opts]) => opts?.method === 'POST')
+    const postCall = fetch.mock.calls.find(([, opts]) => opts?.method === 'POST')
     expect(postCall).toBeTruthy()
     expect(postCall[1].body).toContain('some-encrypted-data')
   })
@@ -149,7 +148,7 @@ describe('FileSystemDriver — googledrive type', () => {
     })
 
     await driver.writeFile('passwords-database', 'updated-data')
-    const patchCall = fetch.mock.calls.find(([url, opts]) => opts?.method === 'PATCH')
+    const patchCall = fetch.mock.calls.find(([, opts]) => opts?.method === 'PATCH')
     expect(patchCall).toBeTruthy()
     expect(patchCall[1].body).toBe('updated-data')
   })

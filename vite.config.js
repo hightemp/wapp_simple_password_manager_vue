@@ -33,12 +33,6 @@ export default defineConfig({
         },
         icons: [
           {
-            src: './favicons/favicon.ico',
-            sizes: '256x256',
-            type: 'image/ico',
-            purpose: 'any maskable',
-          },
-          {
             src: './icons/icon-192x192.png',
             sizes: '192x192',
             type: 'image/png',
@@ -70,13 +64,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
-      // @octokit/request dist-web imports node-fetch as fallback,
-      // but uses globalThis.fetch in browsers — stub node-fetch out
-      'node-fetch': path.resolve(__dirname, 'src/stubs/node-fetch.js'),
     },
   },
   build: {
-    outDir: 'docs',
+    outDir: 'dist',
     rollupOptions: {
       output: {
         manualChunks: {

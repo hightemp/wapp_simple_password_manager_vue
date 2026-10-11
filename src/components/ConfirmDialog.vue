@@ -3,12 +3,12 @@
     <p class="confirm-message">{{ options.message }}</p>
 
     <template #footer>
-      <div class="confirm-actions">
+      <div class="modal-footer-row">
         <button class="action-btn action-btn--ghost" @click="finish(false)">
           {{ options.cancelText ?? 'Cancel' }}
         </button>
         <button
-          :class="['action-btn', options.danger ? 'action-btn--danger' : 'action-btn--primary']"
+          :class="['action-btn', options.danger ? 'action-btn--danger-solid' : 'action-btn--primary']"
           @click="finish(true)"
         >
           {{ options.confirmText ?? 'OK' }}
@@ -51,51 +51,5 @@ defineExpose({ ask })
   color: var(--c-text-secondary);
   line-height: 1.5;
   white-space: pre-line;
-}
-
-.confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  width: 100%;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--text-base);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.action-btn--primary {
-  background: var(--c-accent);
-  color: white;
-}
-.action-btn--primary:hover {
-  background: var(--c-accent-hover);
-}
-
-.action-btn--danger {
-  background: var(--c-danger);
-  color: white;
-}
-.action-btn--danger:hover {
-  filter: brightness(0.92);
-}
-
-.action-btn--ghost {
-  background: transparent;
-  color: var(--c-text-secondary);
-  border: 1px solid var(--c-border);
-}
-.action-btn--ghost:hover {
-  background: var(--c-bg-hover);
-  color: var(--c-text);
 }
 </style>

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useDatabaseStore, parseDatabase } from '../../stores/database'
 import { useReposStore } from '../../stores/repos'
+import { NotFoundError } from '../../services/FileSystemDriver'
+import { DecryptionError } from '../../utils/crypto'
 
 describe('Database Store (Pinia)', () => {
   let db
@@ -13,15 +15,15 @@ describe('Database Store (Pinia)', () => {
 
   describe('CRUD operations', () => {
     it('should add new item via edit window', () => {
-      db.openEditWindow('table', {})
-      expect(db.editWindows.table.isOpen).toBe(true)
+      db.openEditWindow({})
+      expect(db.editWindow.isOpen).toBe(true)
 
-      db.setFormField('table', 'name', 'Gmail')
-      db.setFormField('table', 'login', 'user@gmail.com')
-      db.setFormField('table', 'password', 'secret123')
-      db.setFormField('table', 'category', 'email')
+      db.setFormField('name', 'Gmail')
+      db.setFormField('login', 'user@gmail.com')
+      db.setFormField('password', 'secret123')
+      db.setFormField('category', 'email')
 
-      db.saveEditWindow('table', 'table')
+      db.saveEditWindow()
 
       expect(db.database.table.data.length).toBe(1)
       expect(db.database.table.data[0].name).toBe('Gmail')
@@ -31,32 +33,32 @@ describe('Database Store (Pinia)', () => {
     })
 
     it('should edit existing item', () => {
-      db.openEditWindow('table', {})
-      db.setFormField('table', 'name', 'Old Name')
-      db.saveEditWindow('table', 'table')
+      db.openEditWindow({})
+      db.setFormField('name', 'Old Name')
+      db.saveEditWindow()
 
       const item = db.database.table.data[0]
 
-      db.openEditWindow('table', item)
-      db.setFormField('table', 'name', 'New Name')
-      db.saveEditWindow('table', 'table')
+      db.openEditWindow(item)
+      db.setFormField('name', 'New Name')
+      db.saveEditWindow()
 
       expect(db.database.table.data.length).toBe(1)
       expect(db.database.table.data[0].name).toBe('New Name')
     })
 
     it('should remove item', () => {
-      db.openEditWindow('table', {})
-      db.setFormField('table', 'name', 'Item 1')
-      db.saveEditWindow('table', 'table')
+      db.openEditWindow({})
+      db.setFormField('name', 'Item 1')
+      db.saveEditWindow()
 
-      db.openEditWindow('table', {})
-      db.setFormField('table', 'name', 'Item 2')
-      db.saveEditWindow('table', 'table')
+      db.openEditWindow({})
+      db.setFormField('name', 'Item 2')
+      db.saveEditWindow()
 
       expect(db.database.table.data.length).toBe(2)
 
-      db.removeEntry('table', db.database.table.data[0])
+      db.removeEntry(db.database.table.data[0])
 
       expect(db.database.table.data.length).toBe(1)
       expect(db.database.table.data[0].name).toBe('Item 2')
@@ -65,19 +67,19 @@ describe('Database Store (Pinia)', () => {
     it('should increment unsaved changes counter', () => {
       expect(db.unsavedChanges).toBe(0)
 
-      db.openEditWindow('table', {})
-      db.saveEditWindow('table', 'table')
+      db.openEditWindow({})
+      db.saveEditWindow()
       expect(db.unsavedChanges).toBe(1)
 
-      db.openEditWindow('table', {})
-      db.saveEditWindow('table', 'table')
+      db.openEditWindow({})
+      db.saveEditWindow()
       expect(db.unsavedChanges).toBe(2)
     })
   })
 
   describe('filter', () => {
     it('should update filter', () => {
-      db.setFilter('table', 'name', 'test')
+      db.setFilter('name', 'test')
       expect(db.database.table.filter.name).toBe('test')
     })
   })
@@ -98,30 +100,30 @@ describe('Database Store (Pinia)', () => {
     })
 
     it('should toggle edit window', () => {
-      db.openEditWindow('table', {})
-      expect(db.editWindows.table.isOpen).toBe(true)
-      db.closeEditWindow('table')
-      expect(db.editWindows.table.isOpen).toBe(false)
+      db.openEditWindow({})
+      expect(db.editWindow.isOpen).toBe(true)
+      db.closeEditWindow()
+      expect(db.editWindow.isOpen).toBe(false)
     })
   })
 
   describe('form state', () => {
     it('should populate form when editing', () => {
       const item = { name: 'Test', login: 'user', password: 'pass', category: 'web' }
-      db.openEditWindow('table', item)
+      db.openEditWindow(item)
 
-      expect(db.forms.table.name).toBe('Test')
-      expect(db.forms.table.login).toBe('user')
-      expect(db.forms.table.password).toBe('pass')
-      expect(db.forms.table.category).toBe('web')
+      expect(db.form.name).toBe('Test')
+      expect(db.form.login).toBe('user')
+      expect(db.form.password).toBe('pass')
+      expect(db.form.category).toBe('web')
     })
 
     it('should clear form when adding new item', () => {
-      db.setFormField('table', 'name', 'old')
-      db.openEditWindow('table', {})
+      db.setFormField('name', 'old')
+      db.openEditWindow({})
 
-      expect(db.forms.table.name).toBe('')
-      expect(db.forms.table.login).toBe('')
+      expect(db.form.name).toBe('')
+      expect(db.form.login).toBe('')
     })
   })
 
@@ -144,16 +146,16 @@ describe('Database Store (Pinia)', () => {
 
   describe('getters', () => {
     it('should get field value', () => {
-      db.setFormField('table', 'name', 'hello')
-      expect(db.getFormField('table', 'name')).toBe('hello')
+      db.setFormField('name', 'hello')
+      expect(db.form.name).toBe('hello')
     })
   })
 
   describe('saving', () => {
     function addEntry(name) {
-      db.openEditWindow('table', {})
-      db.setFormField('table', 'name', name)
-      db.saveEditWindow('table', 'table')
+      db.openEditWindow({})
+      db.setFormField('name', name)
+      db.saveEditWindow()
     }
 
     it('should reset unsaved changes after a successful save', async () => {
@@ -185,14 +187,14 @@ describe('Database Store (Pinia)', () => {
     it('should wipe decrypted data and the master password', async () => {
       db.masterPassword = 'secret'
       db.setDatabase({ table: { last_index: 1, page: 1, data: [{ id: 1, name: 'x' }], selection_id: null, filter: {} } })
-      db.setFormField('table', 'password', 'p@ss')
+      db.setFormField('password', 'p@ss')
       db.isRepoWindowOpen = false
 
       await db.lock()
 
       expect(db.masterPassword).toBe('')
       expect(db.database.table.data).toEqual([])
-      expect(db.forms.table.password).toBe('')
+      expect(db.form.password).toBe('')
       expect(db.isRepoWindowOpen).toBe(true)
     })
 
@@ -205,9 +207,9 @@ describe('Database Store (Pinia)', () => {
         readFile: () => Promise.resolve({ data: '', sha: '' }),
       }
       db.masterPassword = 'secret'
-      db.openEditWindow('table', {})
-      db.setFormField('table', 'name', 'Unsaved')
-      db.saveEditWindow('table', 'table')
+      db.openEditWindow({})
+      db.setFormField('name', 'Unsaved')
+      db.saveEditWindow()
 
       await db.lock()
 
@@ -224,8 +226,8 @@ describe('Database Store (Pinia)', () => {
         readFile: () => Promise.reject(new Error('offline')),
       }
       db.masterPassword = 'secret'
-      db.openEditWindow('table', {})
-      db.saveEditWindow('table', 'table')
+      db.openEditWindow({})
+      db.saveEditWindow()
 
       await expect(db.lock()).rejects.toThrow(/offline/)
       expect(db.masterPassword).toBe('')
@@ -279,6 +281,54 @@ describe('Database Store (Pinia)', () => {
       expect(result.table.last_index).toBe(0)
       expect(result.table.page).toBe(1)
       expect(result.table.filter.name).toBe('')
+    })
+  })
+
+  describe('loadDatabase', () => {
+    function connectWith(fileSystem) {
+      const repos = useReposStore()
+      repos.selectRepo(0)
+      repos.fileSystems[0] = fileSystem
+      db.masterPassword = 'secret'
+      db.isRepoWindowOpen = false
+    }
+
+    it('should load and normalize the stored database', async () => {
+      connectWith({ readEncryptedJson: async () => ({ table: { data: [{ name: 'A' }] } }) })
+      await db.loadDatabase()
+      expect(db.table.data).toEqual([{ name: 'A', id: 1 }])
+      expect(db.isLoading).toBe(false)
+      expect(db.connectionError).toBe('')
+    })
+
+    it('should create the database when the repo has none', async () => {
+      const writes = []
+      connectWith({
+        readEncryptedJson: async () => { throw new NotFoundError('passwords-database') },
+        writeEncryptedJson: async (path, value) => { writes.push(value) },
+      })
+      await db.loadDatabase()
+      expect(writes.length).toBe(1)
+      expect(db.connectionError).toBe('')
+      expect(db.isLoading).toBe(false)
+    })
+
+    it('should report a wrong password', async () => {
+      connectWith({ readEncryptedJson: async () => { throw new DecryptionError() } })
+      await db.loadDatabase()
+      expect(db.connectionError).toMatch(/Incorrect password/)
+      expect(db.isRepoWindowOpen).toBe(true)
+    })
+
+    it('should not overwrite a file that decrypts to something that is not a database', async () => {
+      const writes = []
+      connectWith({
+        readEncryptedJson: async () => null,
+        writeEncryptedJson: async (path, value) => { writes.push(value) },
+      })
+      await db.loadDatabase()
+      expect(writes.length).toBe(0)
+      expect(db.connectionError).toMatch(/damaged/)
     })
   })
 })

@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { FileSystemDriver } from '../../services/FileSystemDriver'
+import { FileSystemDriver, NotFoundError } from '../../services/FileSystemDriver'
 import { DecryptionError } from '../../utils/crypto'
-import CryptoJS from 'crypto-js'
 import DES from 'crypto-js/tripledes.js'
 
 // Mock localStorage
@@ -101,7 +100,7 @@ describe('FileSystemDriver', () => {
     it('should reject on missing file for encrypted read', async () => {
       await expect(
         driver.readEncryptedJson('nonexistent', 'password')
-      ).rejects.toBeTruthy()
+      ).rejects.toBeInstanceOf(NotFoundError)
     })
   })
 
@@ -158,6 +157,11 @@ describe('FileSystemDriver', () => {
       await d.writeFile('db', 'y')
       expect(lookups).toBe(1)
       expect(calls[1].sha).toBe('sha-after-1')
+    })
+
+    it('should convert a 404 on read into NotFoundError', async () => {
+      const { d } = githubDriver(async () => { throw Object.assign(new Error('Not Found'), { status: 404 }) })
+      await expect(d.readFile('db')).rejects.toBeInstanceOf(NotFoundError)
     })
 
     it('should propagate non-404 lookup errors', async () => {

@@ -1,12 +1,12 @@
 <template>
 <BaseModal v-model="isOpen" :title="title" size="md">
-  <EntryFormFields :form-name="formName" />
+  <EntryFormFields />
 
-  <PasswordGenerator ref="generator" @use="(password) => db.setFormField(formName, 'password', password)" />
+  <PasswordGenerator ref="generator" @use="(password) => db.setFormField('password', password)" />
 
   <template #footer>
-    <button class="footer-btn footer-btn--ghost" @click="close">Cancel</button>
-    <button class="footer-btn footer-btn--primary" @click="save">Save</button>
+    <button class="action-btn action-btn--ghost" @click="close">Cancel</button>
+    <button class="action-btn action-btn--primary" @click="save">Save</button>
   </template>
 </BaseModal>
 </template>
@@ -18,56 +18,23 @@ import BaseModal from './BaseModal.vue'
 import EntryFormFields from './EntryFormFields.vue'
 import PasswordGenerator from './PasswordGenerator.vue'
 
-const props = defineProps<{
-  title: string
-  formName: string
-  tableName: string
-}>()
+defineProps<{ title: string }>()
 
 const db = useDatabaseStore()
 const generator = useTemplateRef('generator')
 
 const isOpen = computed({
-  get: () => db.editWindows[props.formName]?.isOpen ?? false,
+  get: () => db.editWindow.isOpen,
   set: (value) => { if (!value) close() },
 })
 
 function close() {
   generator.value?.reset()
-  db.closeEditWindow(props.formName)
+  db.closeEditWindow()
 }
 
 function save() {
-  db.saveEditWindow(props.tableName, props.formName)
+  db.saveEditWindow()
   close()
 }
 </script>
-
-<style scoped>
-/* Footer buttons */
-.footer-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-5);
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--text-base);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.footer-btn--primary {
-  background: var(--c-accent);
-  color: white;
-}
-.footer-btn--primary:hover { background: var(--c-accent-hover); }
-
-.footer-btn--ghost {
-  background: transparent;
-  color: var(--c-text-secondary);
-  border: 1px solid var(--c-border);
-}
-.footer-btn--ghost:hover { background: var(--c-bg-hover); }
-</style>
