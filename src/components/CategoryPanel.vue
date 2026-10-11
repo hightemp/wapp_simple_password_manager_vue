@@ -24,15 +24,19 @@
         :total-count="db.table.data.length"
         :uncategorized-count="db.uncategorizedCount"
         :selected="effectiveSelection(db.categoryPaths)"
+        :selected-set="selectedSet"
         :expanded="expanded"
         manageable
-        @select="(path) => (selected = path)"
+        multi-select
+        @select="selectOnly"
+        @toggle-select="toggleSelection"
+        @select-range="selectRange"
         @toggle="toggleExpanded"
         @create="createCategory"
         @rename="renameCategory"
         @delete="deleteCategory"
         @move-entries="moveEntries"
-        @move-category="moveCategory"
+        @move-categories="moveCategories"
       />
     </div>
 
@@ -53,14 +57,15 @@ import { useDatabaseStore } from '@/stores/database'
 import { useCategoryState, clampWidth } from '@/composables/useCategoryState'
 import { useNotify } from '@/composables/useNotify'
 import { useConfirm } from '@/composables/useConfirm'
-import { parentPath } from '@/utils/categories'
+import { parentPath, isWithin } from '@/utils/categories'
 import CategoryTree from './CategoryTree.vue'
 
 const db = useDatabaseStore()
 const notify = useNotify()
 const confirmAction = useConfirm()
 const {
-  selected, expanded, width, collapsed,
+  selectedSet, expanded, width, collapsed,
+  selectOnly, toggleSelection, selectRange,
   toggleExpanded, reveal, followRename, followDelete, effectiveSelection,
 } = useCategoryState()
 const tree = useTemplateRef('tree')
@@ -86,26 +91,37 @@ function renameCategory(path: string, name: string) {
   }
 }
 
+/** Selected category paths (without All / Uncategorized) */
+function selectedPaths(): string[] {
+  return [...selectedSet.value].filter((p): p is string => !!p)
+}
+
 async function deleteCategory(path: string) {
-  const node = findNode(path)
-  const parent = parentPath(path)
+  // The delete button of a multi-selected category deletes the whole selection
+  const selection = selectedPaths()
+  const paths = selection.includes(path) && selection.length > 1 ? selection : [path]
+  const entryCount = db.table.data.filter((entry) => paths.some((p) => isWithin(entry.category ?? '', p))).length
+
+  const what = paths.length === 1 ? `"${paths[0]}"` : `${paths.length} categories`
   const confirmed = await confirmAction({
-    title: 'Delete category',
-    message: `Delete "${path}"?\n\n` +
-      (node && node.count > 0
-        ? `Its ${node.count} entries and subcategories move to ${parent ? `"${parent}"` : 'Uncategorized / the top level'}. No entries are deleted.`
+    title: paths.length === 1 ? 'Delete category' : 'Delete categories',
+    message: `Delete ${what}?\n\n` +
+      (entryCount > 0
+        ? `Their ${entryCount} entries and subcategories move one level up. No entries are deleted.`
         : 'No entries are deleted.'),
     confirmText: 'Delete',
     danger: true,
   })
   if (!confirmed) return
-  db.deleteCategory(path)
-  followDelete(path, parent)
+  // Deepest first, mirroring the store, so the panel state follows each step
+  const deepestFirst = [...paths].sort((a, b) => b.split('/').length - a.split('/').length)
+  db.deleteCategories(deepestFirst)
+  for (const deleted of deepestFirst) followDelete(deleted, parentPath(deleted))
 }
 
-function moveCategory(path: string, newParent: string) {
+function moveCategories(paths: string[], newParent: string) {
   try {
-    followRename(path, db.moveCategory(path, newParent))
+    for (const [from, to] of db.moveCategories(paths, newParent)) followRename(from, to)
   } catch (error) {
     notify('Cannot move category', errorText(error), 'error')
   }
@@ -119,16 +135,6 @@ function moveEntries(ids: number[], category: string) {
     'success',
     2000,
   )
-}
-
-function findNode(path: string) {
-  const stack = [...db.categoryTree]
-  while (stack.length) {
-    const node = stack.pop()!
-    if (node.path === path) return node
-    stack.push(...node.children)
-  }
-  return undefined
 }
 
 // --- resize ---

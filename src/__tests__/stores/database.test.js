@@ -383,6 +383,20 @@ describe('Database Store (Pinia)', () => {
       expect(db.moveCategory('Work/Email', '')).toBe('Email')
     })
 
+    it('should move several categories, subcategories travel with their parent', () => {
+      seed(['A', 'A/Sub', 'B', 'Target'])
+      const moved = db.moveCategories(['A', 'A/Sub', 'B'], 'Target')
+      expect(moved).toEqual([['A', 'Target/A'], ['B', 'Target/B']])
+      expect([1, 2, 3, 4].map(categoryOf)).toEqual(['Target/A', 'Target/A/Sub', 'Target/B', 'Target'])
+      expect(() => db.moveCategories(['Target/A', 'Target/B'], 'Target/B')).toThrow(/into itself/)
+    })
+
+    it('should delete several categories, deepest first', () => {
+      seed(['Work', 'Work/Email', 'Work/Email/Old', 'Other'])
+      db.deleteCategories(['Work', 'Work/Email', 'Other'])
+      expect([1, 2, 3, 4].map(categoryOf)).toEqual(['', '', 'Old', ''])
+    })
+
     it('should move and remove several entries', () => {
       seed(['A', 'B', 'C'])
       db.moveEntries([1, 3], ' X / Y ')

@@ -552,9 +552,10 @@ test.describe('Import & Export', () => {
     const fileInput = page.locator('input[type="file"]')
     await fileInput.setInputFiles(filePath!)
 
-    // Entry should be restored
-    await expect(page.locator('text=Export Test')).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('text=exportuser')).toBeVisible()
+    // Entry should be restored (match table rows only — the closing confirm dialog
+    // can still contain 'Delete "Export Test"?' during its leave animation)
+    await expect(page.locator('.grid-row:has-text("Export Test")')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('.grid-row:has-text("exportuser")')).toBeVisible()
   })
 })
 
@@ -657,6 +658,68 @@ test.describe('Categories', () => {
     await node(page, 'Work/Personal').dragTo(node(page, '*'))
     await expect(count(page, 'Personal')).toHaveText('1')
     await expect(count(page, 'Work')).toHaveText('2')
+  })
+
+  test('should select several categories with Ctrl and Shift and filter by all of them', async ({ page }) => {
+    await seed(page)
+    await addEntry(page, 'Chase', 'Banking')
+
+    // Ctrl+click: Personal + Uncategorized
+    await node(page, 'Personal').click()
+    await node(page, '').click({ modifiers: ['ControlOrMeta'] })
+    await expect(page.locator('.cat-row--selected')).toHaveCount(2)
+    await expect(rows(page)).toHaveCount(2)
+
+    // Ctrl+click again removes it
+    await node(page, '').click({ modifiers: ['ControlOrMeta'] })
+    await expect(rows(page)).toHaveCount(1)
+
+    // Shift+click: range Banking … Personal (Banking, Personal in visible order)
+    await node(page, 'Banking').click()
+    await node(page, 'Personal').click({ modifiers: ['Shift'] })
+    await expect(page.locator('.cat-row--selected')).toHaveCount(2)
+    await expect(rows(page)).toHaveCount(2)
+
+    // A plain click selects one again
+    await node(page, 'Work').click()
+    await expect(page.locator('.cat-row--selected')).toHaveCount(1)
+    await expect(rows(page)).toHaveCount(2)
+  })
+
+  test('should move several selected categories at once', async ({ page }) => {
+    await seed(page)
+    await addEntry(page, 'Chase', 'Banking')
+    await page.locator('[aria-label="New category"]').click()
+    await page.locator('.cat-input').fill('Archive')
+    await page.locator('.cat-input').press('Enter')
+
+    await node(page, 'Banking').click()
+    await node(page, 'Personal').click({ modifiers: ['ControlOrMeta'] })
+    await node(page, 'Personal').dragTo(node(page, 'Archive'))
+
+    await expect(node(page, 'Banking')).toHaveCount(0)
+    await expect(node(page, 'Personal')).toHaveCount(0)
+    await expect(count(page, 'Archive')).toHaveText('2')
+    await expect(count(page, 'Archive/Banking')).toHaveText('1')
+    await expect(count(page, 'Archive/Personal')).toHaveText('1')
+    // The moved categories stay selected
+    await expect(page.locator('.cat-row--selected')).toHaveCount(2)
+  })
+
+  test('should delete several selected categories at once', async ({ page }) => {
+    await seed(page)
+    await node(page, 'Personal').click()
+    await node(page, 'Work').click({ modifiers: ['ControlOrMeta'] })
+    await node(page, 'Work').hover()
+    await node(page, 'Work').locator('[aria-label="Delete category"]').click()
+
+    await expect(page.locator('.modal-panel')).toContainText('Delete 2 categories?')
+    await page.locator('.modal-panel button:has-text("Delete")').click()
+    await expect(node(page, 'Work')).toHaveCount(0)
+    await expect(node(page, 'Personal')).toHaveCount(0)
+    // Subcategories of Work moved up, entries kept
+    await expect(count(page, 'Email')).toHaveText('1')
+    await expect(count(page, '*')).toHaveText('4')
   })
 
   test('should select a range with Shift and delete several entries', async ({ page }) => {

@@ -5,7 +5,7 @@
       v-if="showAll"
       :class="rowClass(null)"
       role="treeitem"
-      :aria-selected="selected === null"
+      :aria-selected="isSelected(null)"
       data-path="*"
       @click="emit('select', null)"
       @dragover="onDragOver($event, null)"
@@ -39,13 +39,13 @@
         :class="rowClass(item.node.path)"
         :style="indent(item.depth)"
         role="treeitem"
-        :aria-selected="selected === item.node.path"
+        :aria-selected="isSelected(item.node.path)"
         :aria-expanded="item.node.children.length ? expanded.has(item.node.path) : undefined"
         :data-path="item.node.path"
         :draggable="manageable && editing?.path !== item.node.path"
-        @click="emit('select', item.node.path)"
+        @click="onRowClick($event, item.node.path)"
         @dragstart="onDragStart($event, item.node.path)"
-        @dragend="draggingCategory = null"
+        @dragend="draggingCategories = []"
         @dragover="onDragOver($event, item.node.path)"
         @dragleave="dropTarget = undefined"
         @drop="onDrop($event, item.node.path)"
@@ -115,9 +115,9 @@
     <li
       :class="rowClass('')"
       role="treeitem"
-      :aria-selected="selected === ''"
+      :aria-selected="isSelected('')"
       data-path=""
-      @click="emit('select', '')"
+      @click="onRowClick($event, '')"
       @dragover="onDragOver($event, '')"
       @dragleave="dropTarget = undefined"
       @drop="onDrop($event, '')"
@@ -142,23 +142,31 @@ const props = withDefaults(defineProps<{
   totalCount: number
   uncategorizedCount: number
   selected: CategorySelection
+  // Highlight several categories (multi-selection); defaults to just `selected`
+  selectedSet?: Set<CategorySelection>
   expanded: Set<string>
   // Show create / rename / delete actions and allow dragging categories
   manageable?: boolean
+  // Ctrl/⌘+click and Shift+click select several categories
+  multiSelect?: boolean
   showAll?: boolean
 }>(), {
   manageable: false,
+  multiSelect: false,
+  selectedSet: undefined,
   showAll: true,
 })
 
 const emit = defineEmits<{
   (e: 'select', path: CategorySelection): void
+  (e: 'toggle-select', path: string): void
+  (e: 'select-range', paths: string[]): void
   (e: 'toggle', path: string): void
   (e: 'create', path: string): void
   (e: 'rename', path: string, name: string): void
   (e: 'delete', path: string): void
   (e: 'move-entries', ids: number[], category: string): void
-  (e: 'move-category', path: string, newParent: string): void
+  (e: 'move-categories', paths: string[], newParent: string): void
 }>()
 
 // Rows of the expanded part of the tree, depth-first
@@ -178,9 +186,28 @@ function indent(depth: number) {
   return { paddingLeft: `calc(var(--space-2) + ${depth * 16}px)` }
 }
 
+function isSelected(path: CategorySelection): boolean {
+  return props.selectedSet ? props.selectedSet.has(path) : props.selected === path
+}
+
+function onRowClick(event: MouseEvent, path: string) {
+  if (props.multiSelect && (event.ctrlKey || event.metaKey)) {
+    emit('toggle-select', path)
+  } else if (props.multiSelect && event.shiftKey && props.selected !== null) {
+    // Range between the primary selection and the clicked row, in visible order
+    const order = [...visibleItems.value.map((item) => item.node.path), '']
+    const from = order.indexOf(props.selected)
+    const to = order.indexOf(path)
+    if (from === -1 || to === -1) emit('select', path)
+    else emit('select-range', order.slice(Math.min(from, to), Math.max(from, to) + 1))
+  } else {
+    emit('select', path)
+  }
+}
+
 function rowClass(path: CategorySelection) {
   return ['cat-row', {
-    'cat-row--selected': props.selected === path,
+    'cat-row--selected': isSelected(path),
     'cat-row--drop': dropTarget.value === path,
   }]
 }
@@ -226,14 +253,16 @@ function cancelEdit() {
 defineExpose({ startCreate })
 
 // --- drag & drop ---
-const draggingCategory = ref<string | null>(null)
+// Categories being dragged (several when dragging one of the multi-selected ones)
+const draggingCategories = ref<string[]>([])
 // Row under the cursor during a valid drag (undefined = none, null = "All")
 const dropTarget = ref<CategorySelection | undefined>(undefined)
 
 function onDragStart(event: DragEvent, path: string) {
   if (!props.manageable || !event.dataTransfer) return
-  draggingCategory.value = path
-  event.dataTransfer.setData(CATEGORY_DRAG_TYPE, path)
+  const selectedPaths = [...(props.selectedSet ?? [])].filter((p): p is string => !!p)
+  draggingCategories.value = selectedPaths.includes(path) ? selectedPaths : [path]
+  event.dataTransfer.setData(CATEGORY_DRAG_TYPE, JSON.stringify(draggingCategories.value))
   event.dataTransfer.effectAllowed = 'move'
 }
 
@@ -241,10 +270,10 @@ function onDragStart(event: DragEvent, path: string) {
 function canDrop(event: DragEvent, target: CategorySelection): boolean {
   const types = event.dataTransfer?.types ?? []
   if (types.includes(ENTRIES_DRAG_TYPE)) return target !== null
-  if (types.includes(CATEGORY_DRAG_TYPE) && draggingCategory.value) {
-    // A category moves to the root via "All", never into itself or Uncategorized
+  if (types.includes(CATEGORY_DRAG_TYPE) && draggingCategories.value.length) {
+    // Categories move to the root via "All", never into themselves or Uncategorized
     if (target === '') return false
-    return target === null || !isWithin(target, draggingCategory.value)
+    return target === null || !draggingCategories.value.some((path) => isWithin(target, path))
   }
   return false
 }
@@ -268,9 +297,9 @@ function onDrop(event: DragEvent, target: CategorySelection) {
     emit('move-entries', JSON.parse(entries), target ?? '')
     return
   }
-  const path = data.getData(CATEGORY_DRAG_TYPE)
-  draggingCategory.value = null
-  if (path) emit('move-category', path, target ?? '')
+  const paths = data.getData(CATEGORY_DRAG_TYPE)
+  draggingCategories.value = []
+  if (paths) emit('move-categories', JSON.parse(paths), target ?? '')
 }
 </script>
 

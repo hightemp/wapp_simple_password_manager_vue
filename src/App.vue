@@ -284,11 +284,15 @@ const searchQuery = ref('')
 const detailsEntry = ref<Entry | null>(null)
 
 // --- categories ---
-const { selected: selectedCategory, effectiveSelection } = useCategoryState()
-// Category the list is filtered by: null = all, '' = uncategorized
+const { selectOnly, effectiveSelection, effectiveSelections } = useCategoryState()
+// Primary selected category: null = all, '' = uncategorized
 const activeCategory = computed(() => effectiveSelection(db.categoryPaths))
+// Every selected category the list is filtered by ([null] = all entries)
+const activeCategories = computed(() => effectiveSelections(db.categoryPaths))
 const categoryLabel = computed(() => {
-  const category = activeCategory.value
+  const categories = activeCategories.value
+  if (categories.length > 1) return `${categories.length} categories`
+  const category = categories[0]
   if (category === null) return 'All'
   return category === '' ? 'Uncategorized' : pathName(category)
 })
@@ -302,15 +306,16 @@ function onCategoryPicked(path: CategorySelection) {
     db.moveEntries([picker.entry.id!], path ?? '')
     notify('Entry moved', path ? `to "${path}"` : 'to Uncategorized', 'success', 2000)
   } else {
-    selectedCategory.value = path
+    selectOnly(path)
   }
 }
 
 function inActiveCategory(entry: Entry): boolean {
-  const category = activeCategory.value
-  if (category === null) return true
-  if (category === '') return !entry.category
-  return isWithin(entry.category ?? '', category)
+  return activeCategories.value.some((category) => {
+    if (category === null) return true
+    if (category === '') return !entry.category
+    return isWithin(entry.category ?? '', category)
+  })
 }
 let autoLockTimer: ReturnType<typeof setTimeout> | null = null
 

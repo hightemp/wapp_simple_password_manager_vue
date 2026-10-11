@@ -37,7 +37,7 @@ A self-hosted, encrypted password manager built with Vue 3. Store your passwords
 - **Vite 6** — fast builds with HMR
 - **UnoCSS** — atomic CSS with custom design tokens
 - **Lucide Icons** — clean, consistent icon set
-- **Vitest** — 114 unit tests (crypto, debounce, stores, FileSystemDriver, Google Drive client)
+- **Vitest** — 122 unit tests (crypto, debounce, stores, FileSystemDriver, Google Drive client)
 - **Web Crypto API** — native browser encryption (AES-256-GCM + PBKDF2)
 - **crypto-js** — only for reading legacy (v1/v2) database files
 
@@ -102,6 +102,7 @@ Click **Connect** to unlock the database. Then:
 The panel on the left shows categories as a tree with entry counts (a category's count includes its subcategories):
 
 - **Filter** — click a category (or **All** / **Uncategorized**) to show its entries, incl. subcategories
+- **Select several** — Ctrl/⌘+click adds or removes a category, Shift+click selects a range; the table shows entries of all selected categories. Dragging or deleting one of the selected categories applies to all of them
 - **Create / rename / delete** — the folder button in the panel header, or the buttons that appear on hover. Deleting a category moves its entries and subcategories one level up; no entries are deleted
 - **Move entries** — drag one or several selected rows onto a category (or onto **Uncategorized**)
 - **Move categories** — drag a category onto another one, or onto **All** to move it to the top level

@@ -143,6 +143,12 @@ export function normalizeDatabase(parsed: any): Database {
   }
 }
 
+/** Drop paths that are inside another path of the list */
+function topLevelPaths(paths: string[]): string[] {
+  const unique = [...new Set(paths)].filter(Boolean)
+  return unique.filter((path) => !unique.some((other) => other !== path && isWithin(path, other)))
+}
+
 function createClosedEditWindow(): { isOpen: boolean; item: Entry } {
   return { isOpen: false, item: {} }
 }
@@ -269,6 +275,24 @@ export const useDatabaseStore = defineStore('database', () => {
     const target = joinPath(newParent, pathName(path))
     if (target !== path) rewriteCategories((p) => replacePrefix(p, path, target))
     return target
+  }
+
+  /**
+   * Move several categories under `newParent` ('' = root). Subcategories of another moved
+   * category travel with it. Returns [old path, new path] pairs of the moved top-level ones.
+   */
+  function moveCategories(paths: string[], newParent: string): [string, string][] {
+    const roots = topLevelPaths(paths)
+    if (roots.some((path) => isWithin(newParent, path))) {
+      throw new Error('A category cannot be moved into itself')
+    }
+    return roots.map((path) => [path, moveCategory(path, newParent)])
+  }
+
+  /** Delete several categories (deepest first, so contents move up step by step) */
+  function deleteCategories(paths: string[]) {
+    const deepestFirst = [...new Set(paths)].sort((a, b) => b.split('/').length - a.split('/').length)
+    for (const path of deepestFirst) deleteCategory(path)
   }
 
   /** Set the category of several entries ('' = uncategorized) */
@@ -434,6 +458,8 @@ export const useDatabaseStore = defineStore('database', () => {
     renameCategory,
     deleteCategory,
     moveCategory,
+    moveCategories,
+    deleteCategories,
     moveEntries,
     exportDatabase,
     importDatabase,
