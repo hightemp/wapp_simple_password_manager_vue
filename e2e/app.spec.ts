@@ -274,6 +274,34 @@ test.describe('Password Masking', () => {
     await page.waitForTimeout(3500)
     await expect(page.locator('.masked')).toBeVisible()
   })
+
+  test('should keep cell buttons inside the login and password cells', async ({ page }) => {
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    const inputs = page.locator('.modal-panel .form-field-input')
+    await inputs.nth(1).fill('Long')
+    await inputs.nth(2).fill('a.very.long.login.name@some-long-domain.example.com')
+    await inputs.nth(3).fill('a-very-long-password-that-does-not-fit-into-the-column-1234567890')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+
+    const row = page.locator('.grid-row:not(.grid-header)').first()
+    await row.hover()
+
+    async function expectButtonsInsideCells() {
+      for (const cell of await row.locator('.grid-cell:has(.cell-action-btn)').all()) {
+        const cellBox = (await cell.boundingBox())!
+        for (const button of await cell.locator('.cell-action-btn').all()) {
+          const box = (await button.boundingBox())!
+          expect(box.x + box.width).toBeLessThanOrEqual(cellBox.x + cellBox.width + 0.5)
+        }
+      }
+    }
+
+    await expectButtonsInsideCells()
+    // Revealed long password must not push the buttons out either
+    await row.locator('[aria-label="Show password"]').click()
+    await expectButtonsInsideCells()
+  })
 })
 
 test.describe('Theme Toggle', () => {

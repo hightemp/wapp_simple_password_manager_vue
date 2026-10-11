@@ -222,7 +222,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
   category: '120px',
   name: 'minmax(120px, 1.5fr)',
   login: 'minmax(100px, 1fr)',
-  password: '160px',
+  password: 'minmax(180px, 0.8fr)',
   url: 'minmax(100px, 1.2fr)',
 }
 
@@ -931,6 +931,15 @@ onUnmounted(() => {
 .revealed {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+}
+
+/* The text shrinks with an ellipsis so the buttons next to it are never clipped */
+.masked,
+.revealed {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cell-action-btn {
