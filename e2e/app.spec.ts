@@ -113,12 +113,21 @@ test.describe('CRUD Operations', () => {
     // Select & delete
     await page.locator('.grid-row:not(.grid-header)').first().click()
 
-    // Handle confirm dialog
-    page.on('dialog', (dialog) => dialog.accept())
+    // Native dialogs must not be used anymore
+    page.on('dialog', (dialog) => { throw new Error('Unexpected native dialog: ' + dialog.message()) })
+
+    // Cancel keeps the entry
     await page.locator('.sidebar-btn[aria-label="Delete"]').click()
+    await expect(page.locator('.modal-panel:has-text("Delete entry")')).toBeVisible()
+    await page.locator('.modal-panel button:has-text("Cancel")').click()
+    await expect(page.locator('.grid-row:has-text("To Delete")')).toBeVisible()
+
+    // Confirm deletes it
+    await page.locator('.sidebar-btn[aria-label="Delete"]').click()
+    await page.locator('.modal-panel button:has-text("Delete")').click()
 
     // Entry should be gone
-    await expect(page.locator('text=To Delete')).not.toBeVisible()
+    await expect(page.locator('.grid-row:has-text("To Delete")')).toHaveCount(0)
   })
 })
 
@@ -509,9 +518,9 @@ test.describe('Import & Export', () => {
 
     // Now delete the entry to simulate "clean state"
     await page.locator('.grid-row:not(.grid-header)').first().click()
-    page.on('dialog', (dialog) => dialog.accept())
     await page.locator('.sidebar-btn[aria-label="Delete"]').click()
-    await expect(page.locator('text=Export Test')).not.toBeVisible()
+    await page.locator('.modal-panel button:has-text("Delete")').click()
+    await expect(page.locator('.grid-row:has-text("Export Test")')).toHaveCount(0)
 
     // Import the previously exported file
     const fileInput = page.locator('input[type="file"]')

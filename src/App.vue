@@ -155,16 +155,20 @@
 
   <EntryEditModal title="Edit Entry" :form-name="TABLE_NAME" :table-name="TABLE_NAME" />
   <RepoSettingsModal />
+  <!-- After other modals so it stacks on top of them -->
+  <ConfirmDialog ref="confirmDialog" />
   <NotificationToast ref="notifications" />
   <LoaderOverlay />
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, useTemplateRef, provide, reactive, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, useTemplateRef, provide, reactive, nextTick } from 'vue'
 import { useDatabaseStore, parseDatabase, type Entry } from '@/stores/database'
 import { useReposStore } from '@/stores/repos'
 import { debounce } from '@/utils/debounce'
+import { copySecret, CLIPBOARD_CLEAR_DELAY } from '@/utils/clipboard'
 import { NOTIFY_KEY, type NotifyFn } from '@/composables/useNotify'
+import { CONFIRM_KEY, type ConfirmFn } from '@/composables/useConfirm'
 import type { MenuAction } from '@/types/menu'
 
 import AppSidebar from '@/components/AppSidebar.vue'
@@ -176,6 +180,7 @@ import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 import KeyboardShortcutsModal from '@/components/KeyboardShortcutsModal.vue'
 import NotificationToast from '@/components/NotificationToast.vue'
 import LoaderOverlay from '@/components/LoaderOverlay.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const TABLE_NAME = 'table'
 const AUTO_LOCK_TIMEOUT = 5 * 60 * 1000
@@ -203,6 +208,10 @@ const notify: NotifyFn = (title, message, type, duration) => {
 }
 provide(NOTIFY_KEY, notify)
 
+const confirmDialog = useTemplateRef('confirmDialog')
+const confirmAction: ConfirmFn = (options) => confirmDialog.value?.ask(options) ?? Promise.resolve(false)
+provide(CONFIRM_KEY, confirmAction)
+
 // --- local state ---
 const selectedEntry = ref<any>(null)
 const revealedRows = reactive(new Set<Entry['id']>())
@@ -229,10 +238,11 @@ const gridStyle = computed(() => {
   return { display: 'grid', gridTemplateColumns: widths.join(' ') }
 })
 
-const rowsPerPage = computed(() => {
-  const height = tableScroll.value?.clientHeight ?? (window.innerHeight - 100)
-  return Math.max(1, Math.floor((height - 60) / 40))
-})
+// Height of the scrollable table area, kept up to date by a ResizeObserver
+const tableHeight = ref(window.innerHeight - 100)
+let tableResizeObserver: ResizeObserver | null = null
+
+const rowsPerPage = computed(() => Math.max(1, Math.floor((tableHeight.value - 60) / 40)))
 
 const page = computed({
   get: () => table.value.page ?? 1,
@@ -262,6 +272,11 @@ const filteredRows = computed(() => {
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / rowsPerPage.value)))
 
+// Keep the current page in range when rows are filtered out or the window grows
+watch(pageCount, (count) => {
+  if (page.value > count) page.value = count
+})
+
 const pageRows = computed(() =>
   filteredRows.value.slice((page.value - 1) * rowsPerPage.value, page.value * rowsPerPage.value)
 )
@@ -273,14 +288,19 @@ function goToLastPage() { page.value = pageCount.value }
 function goToNextPage() { if (page.value < pageCount.value) page.value += 1 }
 
 // --- table ---
-function copyField(entry: any, field: 'login' | 'password') {
+async function copyField(entry: any, field: 'login' | 'password') {
   const text = entry?.[field]
   if (!text) return
-  navigator.clipboard.writeText(text)
+  try {
+    await copySecret(text)
+  } catch (_) {
+    notify('Copy failed', 'The browser blocked clipboard access', 'error')
+    return
+  }
   const cellKey = `${field}-${entry.id}`
   copiedCells.add(cellKey)
   setTimeout(() => copiedCells.delete(cellKey), 1500)
-  notify('Copied', '', 'success', 1500)
+  notify('Copied', `Clipboard will be cleared in ${CLIPBOARD_CLEAR_DELAY / 1000} s`, 'success', 2000)
 }
 
 function togglePasswordVisibility(rowId: Entry['id']) {
@@ -367,27 +387,36 @@ function addEntry() {
   db.openEditWindow(TABLE_NAME, {})
 }
 
+function notifyNoSelection() {
+  notify('No entry selected', 'Click a row in the table first', 'info')
+}
+
 function editSelected() {
   if (selectedEntry.value) {
     db.openEditWindow(TABLE_NAME, selectedEntry.value)
   } else {
-    alert('Please select an entry')
+    notifyNoSelection()
   }
 }
 
-function deleteEntry(entry: any) {
+async function deleteEntry(entry: any) {
   if (!entry) return
-  if (confirm('Are you sure you want to delete this entry?')) {
-    db.removeEntry(TABLE_NAME, entry)
-    if (selectedEntry.value?.id === entry.id) selectedEntry.value = null
-  }
+  const confirmed = await confirmAction({
+    title: 'Delete entry',
+    message: entry.name ? `Delete "${entry.name}"?` : 'Delete this entry?',
+    confirmText: 'Delete',
+    danger: true,
+  })
+  if (!confirmed) return
+  db.removeEntry(TABLE_NAME, entry)
+  if (selectedEntry.value?.id === entry.id) selectedEntry.value = null
 }
 
 function deleteSelected() {
   if (selectedEntry.value) {
     deleteEntry(selectedEntry.value)
   } else {
-    alert('Please select an entry')
+    notifyNoSelection()
   }
 }
 
@@ -422,10 +451,13 @@ async function importDatabase() {
     const imported = parseDatabase(json)
     const currentCount = table.value.data.length
     const importedCount = imported[TABLE_NAME].data.length
-    if (currentCount > 0 && !confirm(
-      `Replace the current ${currentCount} entries with ${importedCount} entries from "${file.name}"?\n\n` +
-      'The change is not saved to repositories until you press Save.'
-    )) return
+    if (currentCount > 0 && !await confirmAction({
+      title: 'Replace database',
+      message: `Replace the current ${currentCount} entries with ${importedCount} entries from "${file.name}"?\n\n` +
+        'The change is not saved to repositories until you press Save.',
+      confirmText: 'Replace',
+      danger: true,
+    })) return
 
     db.importDatabase(json)
     selectedEntry.value = null
@@ -490,6 +522,10 @@ function isInputFocused() {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
 }
 
+function isModalOpen() {
+  return document.querySelector('.modal-overlay') !== null
+}
+
 function onKeydown(event: KeyboardEvent) {
   if (event.ctrlKey && event.key === 's') {
     event.preventDefault()
@@ -503,6 +539,9 @@ function onKeydown(event: KeyboardEvent) {
     event.preventDefault()
     document.querySelector<HTMLInputElement>('.filter-input')?.focus()
   }
+  // Table shortcuts below must not fire behind an open modal
+  if (isModalOpen()) return
+
   if (event.key === 'Delete' && !event.ctrlKey && !event.altKey && !isInputFocused()) {
     deleteSelected()
   }
@@ -537,6 +576,14 @@ function onKeydown(event: KeyboardEvent) {
 onMounted(() => {
   repos.loadRepos()
 
+  if (tableScroll.value) {
+    tableHeight.value = tableScroll.value.clientHeight
+    tableResizeObserver = new ResizeObserver(([entry]) => {
+      tableHeight.value = entry.contentRect.height
+    })
+    tableResizeObserver.observe(tableScroll.value)
+  }
+
   if (isDarkTheme.value) {
     document.documentElement.setAttribute('data-theme', 'dark')
   }
@@ -550,6 +597,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  tableResizeObserver?.disconnect()
   document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('click', closeContextMenu)
   for (const eventName of ['mousemove', 'keydown', 'click']) {

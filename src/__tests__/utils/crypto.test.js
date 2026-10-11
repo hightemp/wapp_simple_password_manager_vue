@@ -131,6 +131,12 @@ describe('Crypto module', { timeout: 30000 }, () => {
   })
 
   describe('generatePassword', () => {
+    it('should only use allowed characters and cover the whole alphabet', () => {
+      const generated = generatePassword(5000, { uppercase: false, lowercase: false, digits: true, symbols: false })
+      expect(generated).toMatch(/^[0-9]+$/)
+      expect(new Set(generated).size).toBe(10)
+    })
+
     it('should generate password of specified length', () => {
       expect(generatePassword(12).length).toBe(12)
       expect(generatePassword(20).length).toBe(20)

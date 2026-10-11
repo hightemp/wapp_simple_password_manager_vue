@@ -221,14 +221,14 @@ export const useDatabaseStore = defineStore('database', () => {
   }
 
   /**
-   * Save the database to every repo marked `needsSave`.
+   * Save the database to every repo in `repos.reposToSave`.
    * Rejects with an error listing the failed repos; unsaved changes are kept in that case.
    */
   async function saveToAllRepos(): Promise<void> {
     const repos = useReposStore()
     const targets = repos.allRepos
       .map((repo, index) => ({ repo, index }))
-      .filter(({ repo }) => repo.needsSave)
+      .filter(({ index }) => repos.reposToSave.has(index))
 
     const results = await Promise.allSettled(targets.map(({ index }) => {
       if (!repos.fileSystems[index]) {

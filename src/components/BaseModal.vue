@@ -38,7 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted, useId } from 'vue'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -60,8 +60,7 @@ const emit = defineEmits<{
 const overlayRef = ref<HTMLElement | null>(null)
 const panelRef = ref<HTMLElement | null>(null)
 
-let uid = 0
-const titleId = `modal-title-${++uid}`
+const titleId = `modal-title-${useId()}`
 
 const sizeClass = computed(() => `modal-${props.size}`)
 
@@ -131,8 +130,7 @@ onUnmounted(() => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  z-var: var(--z-overlay);
-  z-index: 100;
+  z-index: var(--z-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -143,7 +141,7 @@ onUnmounted(() => {
 
 .modal-panel {
   position: relative;
-  z-index: 101;
+  z-index: var(--z-modal);
   background: var(--c-bg-elevated);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-overlay);

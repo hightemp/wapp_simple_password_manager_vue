@@ -249,12 +249,22 @@ export function generatePassword(length: number = 16, options: PasswordOptions =
 
   if (!chars) chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
 
-  const randomValues = new Uint32Array(length)
-  crypto.getRandomValues(randomValues)
-
   let result = ''
   for (let i = 0; i < length; i++) {
-    result += chars[randomValues[i] % chars.length]
+    result += chars[randomIndex(chars.length)]
   }
   return result
+}
+
+/**
+ * Uniform random integer in [0, max) — rejection sampling avoids the modulo bias
+ * of `random % max` when 2^32 is not a multiple of max.
+ */
+function randomIndex(max: number): number {
+  const limit = Math.floor(0x1_0000_0000 / max) * max
+  const buffer = new Uint32Array(1)
+  do {
+    crypto.getRandomValues(buffer)
+  } while (buffer[0] >= limit)
+  return buffer[0] % max
 }

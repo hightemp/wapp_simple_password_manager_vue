@@ -119,4 +119,50 @@ describe('FileSystemDriver', () => {
       expect(d.repo).toBe(repo)
     })
   })
+
+  describe('GitHub write', () => {
+    function githubDriver(getContent) {
+      const d = new FileSystemDriver({ type: 'github', name: 'gh', login: 'me', repo: 'vault', key: 'ghp_x' })
+      const calls = []
+      d.octokit = {
+        rest: {
+          repos: {
+            getContent,
+            createOrUpdateFileContents: async (params) => {
+              calls.push(params)
+              return { data: { content: { sha: 'sha-after-' + calls.length } } }
+            },
+          },
+        },
+      }
+      return { d, calls }
+    }
+
+    it('should fetch the SHA before updating a file not read in this session', async () => {
+      const { d, calls } = githubDriver(async () => ({ data: { sha: 'remote-sha' } }))
+      await d.writeFile('/db', 'x')
+      expect(calls[0].sha).toBe('remote-sha')
+      expect(calls[0].path).toBe('db')
+    })
+
+    it('should create the file (no SHA) when it does not exist', async () => {
+      const { d, calls } = githubDriver(async () => { throw Object.assign(new Error('Not Found'), { status: 404 }) })
+      await d.writeFile('db', 'x')
+      expect(calls[0].sha).toBeUndefined()
+    })
+
+    it('should reuse the SHA returned by the previous write', async () => {
+      let lookups = 0
+      const { d, calls } = githubDriver(async () => { lookups++; return { data: { sha: 'remote-sha' } } })
+      await d.writeFile('db', 'x')
+      await d.writeFile('db', 'y')
+      expect(lookups).toBe(1)
+      expect(calls[1].sha).toBe('sha-after-1')
+    })
+
+    it('should propagate non-404 lookup errors', async () => {
+      const { d } = githubDriver(async () => { throw Object.assign(new Error('Bad credentials'), { status: 401 }) })
+      await expect(d.writeFile('db', 'x')).rejects.toThrow('Bad credentials')
+    })
+  })
 })

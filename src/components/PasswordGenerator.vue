@@ -49,6 +49,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { generatePassword } from '@/utils/crypto'
+import { copySecret } from '@/utils/clipboard'
 
 const emit = defineEmits<{ (e: 'use', password: string): void }>()
 
@@ -75,7 +76,7 @@ function generate() {
 }
 
 function copy() {
-  navigator.clipboard.writeText(password.value)
+  copySecret(password.value).catch(() => { /* clipboard blocked — nothing to do */ })
 }
 
 function reset() {

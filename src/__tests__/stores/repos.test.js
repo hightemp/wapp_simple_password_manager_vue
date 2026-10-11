@@ -79,4 +79,43 @@ describe('Repos Store (Pinia)', () => {
     expect(repos.allRepos[1].key).toBe('ghp_secret')
     expect(window.location.search).toBe('?keep=1')
   })
+
+  it('should track repos to save at runtime without persisting the flag', () => {
+    repos.saveRepo(-1, { type: 'github', name: 'R1' })
+    repos.selectRepo(1)
+
+    expect([...repos.reposToSave]).toEqual([0, 1])
+    const stored = JSON.parse(localStorageMock.getItem('aReposList'))
+    expect(stored[0]).not.toHaveProperty('needsSave')
+    expect(repos.allRepos[1]).not.toHaveProperty('needsSave')
+  })
+
+  it('should drop legacy need_save/needsSave flags when loading', () => {
+    localStorageMock.setItem('aReposList', JSON.stringify([{ type: 'github', name: 'Old', need_save: true, needsSave: true }]))
+    window.history.replaceState(null, '', '/')
+    repos.loadRepos()
+    expect(repos.allRepos[1]).toEqual({ type: 'github', name: 'Old' })
+  })
+
+  it('should shift runtime indexes when a repo is removed', () => {
+    repos.saveRepo(-1, { type: 'github', name: 'R1' })
+    repos.saveRepo(-1, { type: 'github', name: 'R2' })
+    repos.selectRepo(2)
+    repos.createFileSystem(2)
+
+    repos.removeRepo(1)
+
+    expect(repos.selectedIndex).toBe(1)
+    expect(repos.currentRepo.name).toBe('R2')
+    expect([...repos.reposToSave]).toEqual([0, 1])
+    expect(repos.fileSystems[1].repo.name).toBe('R2')
+    expect(repos.fileSystems[2]).toBeUndefined()
+  })
+
+  it('should drop the cached driver when repo settings change', () => {
+    repos.saveRepo(-1, { type: 'localstorage', name: 'R1' })
+    repos.createFileSystem(1)
+    repos.saveRepo(1, { type: 'localstorage', name: 'R1 renamed' })
+    expect(repos.fileSystems[1]).toBeUndefined()
+  })
 })

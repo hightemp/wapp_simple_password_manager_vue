@@ -15,7 +15,6 @@ export interface RepoItem {
   url?: string
   username?: string
   password?: string
-  needsSave?: boolean
   gdrive_client_id?: string
 }
 
@@ -156,14 +155,32 @@ export class FileSystemDriver {
 
   async writeGithub(path: string, data: string, sha: string | null = null): Promise<void> {
     path = trimLeadingSlashes(path)
-    await this.octokit!.rest.repos.createOrUpdateFileContents({
+    // Updating an existing file requires its current SHA — look it up if this
+    // session hasn't read the file yet (undefined = file doesn't exist, create it)
+    const currentSha = sha ?? this.fileIds[path] ?? await this.fetchGithubSha(path)
+    const { data: result }: any = await this.octokit!.rest.repos.createOrUpdateFileContents({
       owner: this.repo.login!,
       repo: this.repo.repo!,
       path,
-      sha: sha ? sha : this.fileIds[path],
+      sha: currentSha,
       message: 'update: ' + new Date(),
       content: encode(data),
     })
+    if (result?.content?.sha) this.fileIds[path] = result.content.sha
+  }
+
+  async fetchGithubSha(path: string): Promise<string | undefined> {
+    try {
+      const { data }: any = await this.octokit!.rest.repos.getContent({
+        owner: this.repo.login!,
+        repo: this.repo.repo!,
+        path,
+      })
+      return data.sha
+    } catch (error: any) {
+      if (error?.status === 404) return undefined
+      throw error
+    }
   }
 
   async deleteGithub(path: string): Promise<void> {

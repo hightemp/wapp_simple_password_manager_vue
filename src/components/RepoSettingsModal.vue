@@ -242,10 +242,14 @@ import { useDatabaseStore, DATABASE_PATH } from '@/stores/database'
 import { useReposStore } from '@/stores/repos'
 import { downloadJson } from '@/utils/download'
 import { FileSystemDriver, type RepoItem, type RepoType } from '@/services/FileSystemDriver'
+import { useNotify } from '@/composables/useNotify'
+import { useConfirm } from '@/composables/useConfirm'
 import BaseModal from './BaseModal.vue'
 
 const db = useDatabaseStore()
 const repos = useReposStore()
+const notify = useNotify()
+const confirmAction = useConfirm()
 
 // --- Repo edit form ---
 // null = form hidden, -1 = new repo, otherwise index in repos.allRepos
@@ -349,7 +353,8 @@ function cancelEdit() {
 
 function connect() {
   if (!repos.currentRepo) {
-    return alert('Please select a repository')
+    notify('No repository selected', 'Select a repository in the list first', 'error')
+    return
   }
   db.connectionError = ''
   db.isRepoWindowOpen = false
@@ -359,11 +364,13 @@ function connect() {
 // --- Export / import repo list ---
 const importInput = useTemplateRef<HTMLInputElement>('importInput')
 
-function exportRepos() {
-  const confirmed = confirm(
-    'The exported file contains API keys and passwords of your repositories in plain text.\n\n' +
-    'Store it somewhere safe and delete it after use. Continue?'
-  )
+async function exportRepos() {
+  const confirmed = await confirmAction({
+    title: 'Export repositories',
+    message: 'The exported file contains API keys and passwords of your repositories in plain text.\n\n' +
+      'Store it somewhere safe and delete it after use.',
+    confirmText: 'Export',
+  })
   if (!confirmed) return
   downloadJson('repositories', JSON.stringify(repos.allRepos))
 }

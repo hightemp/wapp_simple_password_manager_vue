@@ -8,6 +8,12 @@ const REPOS_STORAGE_KEY = 'aReposList'
 // Query params that describe a repo passed via link (?type=github&name=...)
 const URL_REPO_PARAMS = ['type', 'name', 'login', 'repo', 'key', 'url', 'username', 'password'] as const
 
+/** Drop runtime flags older versions stored on repo objects */
+function stripRuntimeFields(repo: RepoItem & { needsSave?: unknown; need_save?: unknown }): RepoItem {
+  const { needsSave: _needsSave, need_save: _legacyNeedSave, ...rest } = repo
+  return rest
+}
+
 export const useReposStore = defineStore('repos', () => {
   // --- state ---
   const defaultRepos = ref<RepoItem[]>([
@@ -16,6 +22,8 @@ export const useReposStore = defineStore('repos', () => {
   const userRepos = ref<RepoItem[]>([])
   const fileSystems = ref<Record<number, FileSystemDriver>>({})
   const selectedIndex = ref<number | null>(null)
+  // Indexes (in allRepos) the database is saved to — runtime only, never persisted
+  const reposToSave = ref(new Set<number>())
 
   // --- getters ---
   const allRepos = computed(() =>
@@ -30,7 +38,7 @@ export const useReposStore = defineStore('repos', () => {
 
   // --- actions ---
   function persist() {
-    localStorage.setItem(REPOS_STORAGE_KEY, JSON.stringify(userRepos.value))
+    localStorage.setItem(REPOS_STORAGE_KEY, JSON.stringify(userRepos.value.map(stripRuntimeFields)))
   }
 
   /**
@@ -40,7 +48,7 @@ export const useReposStore = defineStore('repos', () => {
    */
   function loadRepos() {
     try {
-      userRepos.value = JSON.parse(localStorage.getItem(REPOS_STORAGE_KEY) || '[]')
+      userRepos.value = JSON.parse(localStorage.getItem(REPOS_STORAGE_KEY) || '[]').map(stripRuntimeFields)
     } catch (_) {
       userRepos.value = []
     }
@@ -68,21 +76,39 @@ export const useReposStore = defineStore('repos', () => {
   function removeRepo(index: number) {
     userRepos.value.splice(index - defaultRepos.value.length, 1)
     persist()
+
+    // Indexes after the removed repo shift down by one
+    const shift = (i: number) => (i > index ? i - 1 : i)
+    reposToSave.value = new Set([...reposToSave.value].filter((i) => i !== index).map(shift))
+    fileSystems.value = Object.fromEntries(
+      Object.entries(fileSystems.value)
+        .filter(([i]) => Number(i) !== index)
+        .map(([i, fileSystem]) => [shift(Number(i)), fileSystem])
+    )
+    if (selectedIndex.value === index) selectedIndex.value = null
+    else if (selectedIndex.value !== null) selectedIndex.value = shift(selectedIndex.value)
   }
 
+  /** Select the repo to work with; the database is saved to it and to Local Storage */
   function selectRepo(index: number) {
     selectedIndex.value = index
-    const repos = allRepos.value
-    for (const repo of repos) {
-      repo.needsSave = false
-    }
-    repos[0].needsSave = true
-    repos[index].needsSave = true
+    reposToSave.value = new Set([0, index])
+  }
+
+  /** Forget runtime state of user repos (their indexes are no longer valid) */
+  function resetUserRepoState() {
+    const isDefault = (i: number) => i < defaultRepos.value.length
+    reposToSave.value = new Set([...reposToSave.value].filter(isDefault))
+    fileSystems.value = Object.fromEntries(
+      Object.entries(fileSystems.value).filter(([i]) => isDefault(Number(i)))
+    )
+    if (selectedIndex.value !== null && !isDefault(selectedIndex.value)) selectedIndex.value = null
   }
 
   function clearRepos() {
     userRepos.value = []
     persist()
+    resetUserRepoState()
   }
 
   /** Add a new repo (index = -1) or replace the repo at `index` */
@@ -91,6 +117,8 @@ export const useReposStore = defineStore('repos', () => {
       userRepos.value.push(repo)
     } else {
       userRepos.value.splice(index - defaultRepos.value.length, 1, repo)
+      // Settings changed — the driver must be recreated with the new credentials
+      delete fileSystems.value[index]
     }
     persist()
   }
@@ -100,12 +128,13 @@ export const useReposStore = defineStore('repos', () => {
   }
 
   function importRepos(repos: RepoItem[]) {
-    userRepos.value = repos.filter((repo) => repo.type !== 'localstorage')
+    userRepos.value = repos.filter((repo) => repo.type !== 'localstorage').map(stripRuntimeFields)
     persist()
+    resetUserRepoState()
   }
 
   function markCurrentRepoForSave() {
-    if (currentRepo.value) currentRepo.value.needsSave = true
+    if (selectedIndex.value !== null) reposToSave.value.add(selectedIndex.value)
   }
 
   return {
@@ -113,6 +142,7 @@ export const useReposStore = defineStore('repos', () => {
     userRepos,
     fileSystems,
     selectedIndex,
+    reposToSave,
     allRepos,
     currentRepo,
     currentFileSystem,
