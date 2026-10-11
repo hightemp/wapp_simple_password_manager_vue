@@ -15,7 +15,7 @@ A self-hosted, encrypted password manager built with Vue 3. Store your passwords
 
 ## Features
 
-- **AES-256-GCM encryption** — passwords encrypted client-side with PBKDF2 key derivation (100k iterations)
+- **AES-256-GCM encryption** — passwords encrypted client-side (Web Crypto API) with PBKDF2-SHA256 key derivation (600k iterations); tampering is detected
 - **Multiple storage backends** — LocalStorage, GitHub repository, WebDAV server, or Google Drive (appDataFolder)
 - **Multi-repo sync** — save to multiple repositories simultaneously
 - **Dark theme** — automatic system detection + manual toggle
@@ -37,8 +37,9 @@ A self-hosted, encrypted password manager built with Vue 3. Store your passwords
 - **Vite 6** — fast builds with HMR
 - **UnoCSS** — atomic CSS with custom design tokens
 - **Lucide Icons** — clean, consistent icon set
-- **Vitest** — 66 unit tests (crypto, debounce, stores, FileSystemDriver, Google Drive client)
+- **Vitest** — 75 unit tests (crypto, debounce, stores, FileSystemDriver, Google Drive client)
 - **Web Crypto API** — native browser encryption (AES-256-GCM + PBKDF2)
+- **crypto-js** — only for reading legacy (v1/v2) database files
 
 ## Getting Started
 
@@ -99,12 +100,26 @@ Click **Connect** to unlock the database. Then:
 
 | Aspect | Implementation |
 |--------|---------------|
-| Encryption | AES-256-GCM (Web Crypto API) |
-| Key Derivation | PBKDF2 with 100,000 iterations, random salt |
+| Encryption | AES-256-GCM (Web Crypto API) — authenticated: a wrong password or a modified file is always rejected |
+| Key Derivation | PBKDF2-HMAC-SHA256, 600,000 iterations, random 128-bit salt, random 96-bit IV per save |
 | Zero Knowledge | Master password never leaves the browser |
-| Auto-lock | Session clears after 5 min inactivity |
-| Legacy Support | Auto-detects and migrates old 3DES format to AES-256 |
+| Auto-lock | After 5 min inactivity unsaved changes are saved, then the master password and all decrypted data are wiped from memory |
+| Legacy Support | Older files (v2: AES-256-CBC via crypto-js, v1: 3DES) are read automatically and re-encrypted as v3 on the next save |
 | Google Drive | Data stored in appDataFolder — only this app can access the files |
+| Repository secrets | API keys / WebDAV passwords are stored **unencrypted** in the browser's localStorage and in exported repository files |
+
+The app must be served over **HTTPS** (or `localhost`): the Web Crypto API is not available on plain HTTP.
+
+### Database file format
+
+| Version | Cipher | Key derivation | Status |
+|---------|--------|----------------|--------|
+| v3 | AES-256-GCM (Web Crypto) | PBKDF2-SHA256, 600k iterations (stored in file) | Current — written on every save |
+| v2 | AES-256-CBC, no MAC (crypto-js) | PBKDF2-SHA256 or SHA1, 100k iterations | Read-only |
+| v1 | 3DES (crypto-js) | Password used as passphrase | Read-only |
+
+> **Upgrading:** once a database is saved in v3, versions of the app released before v3 support cannot open it
+> (they report "Incorrect password"). Reload the app on every device so the service worker picks up the new version.
 
 ## Google Drive Setup
 

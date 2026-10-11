@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { FileSystemDriver } from '../../services/FileSystemDriver'
-import { encrypt, decrypt } from '../../utils/crypto'
+import { DecryptionError } from '../../utils/crypto'
 import CryptoJS from 'crypto-js'
 import DES from 'crypto-js/tripledes.js'
 
@@ -36,7 +36,7 @@ describe('FileSystemDriver', () => {
       expect(result).toEqual(payload)
     })
 
-    it('should write and read encrypted JSON (v2)', async () => {
+    it('should write and read encrypted JSON (v3)', async () => {
       const password = 'my-secret'
       const payload = { table: { data: [{ id: 1, name: 'entry' }] } }
 
@@ -59,7 +59,7 @@ describe('FileSystemDriver', () => {
       expect(result).toEqual(payload)
     })
 
-    it('should handle migration: read v1, save as v2, read v2', async () => {
+    it('should handle migration: read v1, save as v3, read v3', async () => {
       const password = 'migrate-me'
       const payload = {
         table: {
@@ -79,18 +79,23 @@ describe('FileSystemDriver', () => {
       const loaded = await driver.readEncryptedJson('passwords-database', password)
       expect(loaded).toEqual(payload)
 
-      // Save with new driver (writes v2 format)
+      // Save with new driver (writes v3 format)
       await driver.writeEncryptedJson('passwords-database', loaded, password)
 
-      // Read again (should now read v2 format)
+      // Read again (should now read v3 format)
       const reloaded = await driver.readEncryptedJson('passwords-database', password)
       expect(reloaded).toEqual(payload)
 
-      // Verify it's actually in v2 format now
+      // Verify it's actually in v3 format now
       const stored = localStorageMock.getItem('passwords-database')
       const parsed = JSON.parse(stored)
-      expect(parsed.v).toBe(2)
+      expect(parsed.v).toBe(3)
       expect(parsed.salt).toBeTruthy()
+    })
+
+    it('should reject a wrong password with DecryptionError', async () => {
+      await driver.writeEncryptedJson('encrypted.dat', { a: 1 }, 'right')
+      await expect(driver.readEncryptedJson('encrypted.dat', 'wrong')).rejects.toBeInstanceOf(DecryptionError)
     })
 
     it('should reject on missing file for encrypted read', async () => {

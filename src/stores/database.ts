@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { downloadJson } from '@/utils/download'
+import { DecryptionError } from '@/utils/crypto'
 import type { FileSystemDriver } from '@/services/FileSystemDriver'
 import { useReposStore } from './repos'
 
@@ -209,14 +210,8 @@ export const useDatabaseStore = defineStore('database', () => {
       })
       .catch((error: unknown) => {
         const message = error + ''
-        // Wrong password — decryption produces invalid data
-        if (
-          message.match(/Malformed UTF-8 data/) ||
-          message.match(/SyntaxError/) ||
-          message.match(/Unexpected token/) ||
-          message.match(/JSON\.parse/)
-        ) {
-          showConnectionError('Incorrect password. Please check your master password and try again.')
+        if (error instanceof DecryptionError) {
+          showConnectionError('Incorrect password (or the database file is damaged). Please check your master password and try again.')
           return
         }
         // No database yet — create new one

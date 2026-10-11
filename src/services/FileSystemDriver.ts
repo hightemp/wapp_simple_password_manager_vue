@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest'
 import { createClient, WebDAVClient } from 'webdav/web'
 import { encode, decode } from 'js-base64'
-import { encrypt, decrypt } from '@/utils/crypto'
+import { encrypt, decrypt, DecryptionError } from '@/utils/crypto'
 import * as googleDrive from './googleDrive'
 
 export type RepoType = 'localstorage' | 'github' | 'webdav' | 'googledrive'
@@ -70,15 +70,21 @@ export class FileSystemDriver {
   async readEncryptedJson(path: string, password: string): Promise<unknown> {
     const { data } = await this.readFile(path)
     if (!data) throw new Error('Not Found')
-    return JSON.parse(decrypt(data, password))
+    const decrypted = await decrypt(data, password)
+    try {
+      return JSON.parse(decrypted)
+    } catch (_) {
+      // Legacy formats can "decrypt" with a wrong key into garbage
+      throw new DecryptionError()
+    }
   }
 
   writeJson(path: string, value: unknown): Promise<void> {
     return this.writeFile(path, JSON.stringify(value, null, 4))
   }
 
-  writeEncryptedJson(path: string, value: unknown, password: string): Promise<void> {
-    return this.writeFile(path, encrypt(JSON.stringify(value, null, 4), password))
+  async writeEncryptedJson(path: string, value: unknown, password: string): Promise<void> {
+    await this.writeFile(path, await encrypt(JSON.stringify(value, null, 4), password))
   }
 
   readFile(path: string): Promise<ReadResult> {

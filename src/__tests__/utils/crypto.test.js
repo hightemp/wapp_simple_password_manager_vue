@@ -5,122 +5,128 @@ import {
   encrypt,
   decrypt,
   encryptV2,
-  decryptV2,
-  decryptV1,
-  deriveKey,
+  encryptV3,
+  DecryptionError,
   generatePassword,
 } from '../../utils/crypto'
 
-describe('Crypto module', () => {
+// Builds a v2 envelope the way older builds did: no `kdf` field, given hasher
+function legacyV2Envelope(data, password, hasher) {
+  const salt = CryptoJS.lib.WordArray.random(16)
+  const iv = CryptoJS.lib.WordArray.random(16)
+  const key = CryptoJS.PBKDF2(password, salt, { keySize: 8, iterations: 100000, hasher })
+  const encrypted = CryptoJS.AES.encrypt(data, key, {
+    iv,
+    mode: CryptoJS.mode.CBC,
+    padding: CryptoJS.pad.Pkcs7,
+  }).toString()
+  return JSON.stringify({
+    v: 2,
+    salt: salt.toString(CryptoJS.enc.Hex),
+    iv: iv.toString(CryptoJS.enc.Hex),
+    data: encrypted,
+  })
+}
+
+describe('Crypto module', { timeout: 30000 }, () => {
   const password = 'test-password-123'
   const testData = {
     table: {
       last_index: 2,
       data: [
         { id: 1, name: 'test', login: 'user', password: 'pass123' },
-        { id: 2, name: 'test2', login: 'user2', password: 'pass456' },
+        { id: 2, name: 'тест ✓', login: 'user2', password: 'pass456' },
       ],
     },
   }
+  const original = JSON.stringify(testData)
 
-  describe('encrypt / decrypt (v2 AES+PBKDF2)', () => {
-    it('should encrypt and decrypt data correctly', () => {
-      const original = JSON.stringify(testData)
-      const encrypted = encrypt(original, password)
-      const decrypted = decrypt(encrypted, password)
-
-      expect(JSON.parse(decrypted)).toEqual(testData)
+  describe('encrypt / decrypt (v3 AES-GCM)', () => {
+    it('should encrypt and decrypt data correctly (incl. non-ASCII)', async () => {
+      const encrypted = await encrypt(original, password)
+      expect(JSON.parse(await decrypt(encrypted, password))).toEqual(testData)
     })
 
-    it('should produce v2 envelope format', () => {
-      const encrypted = encrypt('hello', password)
-      const parsed = JSON.parse(encrypted)
+    it('should produce v3 envelope format', async () => {
+      const parsed = JSON.parse(await encrypt('hello', password))
 
-      expect(parsed.v).toBe(2)
-      expect(parsed.salt).toBeTruthy()
-      expect(parsed.iv).toBeTruthy()
+      expect(parsed.v).toBe(3)
+      expect(parsed.kdf).toBe('PBKDF2-SHA256')
+      expect(parsed.iterations).toBe(600000)
+      expect(atob(parsed.salt).length).toBe(16)
+      expect(atob(parsed.iv).length).toBe(12)
       expect(parsed.data).toBeTruthy()
     })
 
-    it('should produce different ciphertexts for same input (random salt)', () => {
-      const data = 'same-input'
-      const encrypted1 = encrypt(data, password)
-      const encrypted2 = encrypt(data, password)
-
+    it('should produce different ciphertexts for same input (random salt/iv)', async () => {
+      const encrypted1 = await encrypt('same-input', password)
+      const encrypted2 = await encrypt('same-input', password)
       expect(encrypted1).not.toBe(encrypted2)
     })
 
-    it('should fail with wrong password', () => {
-      const encrypted = encrypt('secret', password)
-      // Wrong password should produce garbage or empty string
-      const decrypted = decrypt(encrypted, 'wrong-password')
-      expect(decrypted).not.toBe('secret')
+    it('should reject a wrong password with DecryptionError', async () => {
+      const encrypted = await encrypt('secret', password)
+      await expect(decrypt(encrypted, 'wrong-password')).rejects.toBeInstanceOf(DecryptionError)
+    })
+
+    it('should reject tampered ciphertext with DecryptionError', async () => {
+      const envelope = JSON.parse(await encrypt(original, password))
+      const bytes = Uint8Array.from(atob(envelope.data), (c) => c.charCodeAt(0))
+      bytes[5] ^= 0x01
+      envelope.data = btoa(String.fromCharCode(...bytes))
+
+      await expect(decrypt(JSON.stringify(envelope), password)).rejects.toBeInstanceOf(DecryptionError)
+    })
+
+    it('should use the iteration count stored in the envelope', async () => {
+      const encrypted = await encryptV3(original, password, 1000)
+      expect(JSON.parse(encrypted).iterations).toBe(1000)
+      expect(JSON.parse(await decrypt(encrypted, password))).toEqual(testData)
+    })
+  })
+
+  describe('Backward compatibility with v2 (AES-CBC, crypto-js)', () => {
+    it('should decrypt v2 envelopes with kdf=sha256', async () => {
+      const encrypted = encryptV2(original, password, 'sha256')
+      expect(JSON.parse(await decrypt(encrypted, password))).toEqual(testData)
+    })
+
+    it('should decrypt v2 envelopes without kdf made with SHA256', async () => {
+      const envelope = legacyV2Envelope(original, password, CryptoJS.algo.SHA256)
+      expect(JSON.parse(await decrypt(envelope, password))).toEqual(testData)
+    })
+
+    it('should decrypt v2 envelopes without kdf made with SHA1 (crypto-js < 4.2.0)', async () => {
+      const envelope = legacyV2Envelope(original, password, CryptoJS.algo.SHA1)
+      expect(JSON.parse(await decrypt(envelope, password))).toEqual(testData)
+    })
+
+    it('should not fall back to 3DES when v2 decryption fails', async () => {
+      const encrypted = encryptV2(original, password, 'sha256')
+      // Wrong password must not be treated as a v1 payload
+      let result = null
+      try { result = await decrypt(encrypted, 'wrong-password') } catch (e) { result = e }
+      if (typeof result === 'string') {
+        expect(() => JSON.parse(result)).toThrow()
+      } else {
+        expect(result).toBeInstanceOf(DecryptionError)
+      }
     })
   })
 
   describe('Backward compatibility with v1 (3DES)', () => {
-    it('should decrypt legacy 3DES data', () => {
-      const original = JSON.stringify(testData)
-      // Encrypt with old method (3DES, password as direct key)
+    it('should decrypt legacy 3DES data', async () => {
       const legacyEncrypted = DES.encrypt(original, password).toString()
-
-      // decrypt should detect v1 format and decrypt correctly
-      const decrypted = decrypt(legacyEncrypted, password)
-
-      expect(JSON.parse(decrypted)).toEqual(testData)
+      expect(JSON.parse(await decrypt(legacyEncrypted, password))).toEqual(testData)
     })
 
-    it('should decrypt legacy 3DES with different passwords', () => {
-      const data = JSON.stringify({ name: 'legacy-test' })
-      const key = 'my-old-password'
-      const legacy = DES.encrypt(data, key).toString()
-
-      const decrypted = decrypt(legacy, key)
-      expect(JSON.parse(decrypted)).toEqual({ name: 'legacy-test' })
-    })
-
-    it('should handle migration: read v1, write v2, read back v2', () => {
-      const original = JSON.stringify(testData)
-      // Step 1: old format (3DES)
+    it('should handle migration: read v1, write v3, read back v3', async () => {
       const v1Encrypted = DES.encrypt(original, password).toString()
+      const decrypted = await decrypt(v1Encrypted, password)
 
-      // Step 2: decrypt with new decrypt (auto-detects v1)
-      const decrypted = decrypt(v1Encrypted, password)
-      expect(JSON.parse(decrypted)).toEqual(testData)
-
-      // Step 3: re-encrypt with new encrypt (v2)
-      const v2Encrypted = encrypt(decrypted, password)
-
-      // Step 4: decrypt v2
-      const decrypted2 = decrypt(v2Encrypted, password)
-      expect(JSON.parse(decrypted2)).toEqual(testData)
-    })
-  })
-
-  describe('deriveKey', () => {
-    it('should produce consistent key for same password+salt', () => {
-      const salt = CryptoJS.enc.Hex.parse('aabbccdd11223344')
-      const key1 = deriveKey('password', salt)
-      const key2 = deriveKey('password', salt)
-
-      expect(key1.toString()).toBe(key2.toString())
-    })
-
-    it('should produce different keys for different passwords', () => {
-      const salt = CryptoJS.enc.Hex.parse('aabbccdd11223344')
-      const key1 = deriveKey('password1', salt)
-      const key2 = deriveKey('password2', salt)
-
-      expect(key1.toString()).not.toBe(key2.toString())
-    })
-
-    it('should produce different keys for different salts', () => {
-      const salt1 = CryptoJS.enc.Hex.parse('aabbccdd11223344')
-      const salt2 = CryptoJS.enc.Hex.parse('11223344aabbccdd')
-      const key1 = deriveKey('password', salt1)
-      const key2 = deriveKey('password', salt2)
-
-      expect(key1.toString()).not.toBe(key2.toString())
+      const v3Encrypted = await encrypt(decrypted, password)
+      expect(JSON.parse(v3Encrypted).v).toBe(3)
+      expect(JSON.parse(await decrypt(v3Encrypted, password))).toEqual(testData)
     })
   })
 
@@ -155,47 +161,6 @@ describe('Crypto module', () => {
       const generated2 = generatePassword(32)
       // Extremely unlikely to be the same
       expect(generated1).not.toBe(generated2)
-    })
-  })
-
-  describe('PBKDF2 hasher compatibility', { timeout: 30000 }, () => {
-    // Builds a v2 envelope the way older builds did: no `kdf` field, given hasher
-    function legacyEnvelope(data, password, hasher) {
-      const salt = CryptoJS.lib.WordArray.random(16)
-      const iv = CryptoJS.lib.WordArray.random(16)
-      const key = CryptoJS.PBKDF2(password, salt, { keySize: 8, iterations: 100000, hasher })
-      const encrypted = CryptoJS.AES.encrypt(data, key, {
-        iv,
-        mode: CryptoJS.mode.CBC,
-        padding: CryptoJS.pad.Pkcs7,
-      }).toString()
-      return JSON.stringify({
-        v: 2,
-        salt: salt.toString(CryptoJS.enc.Hex),
-        iv: iv.toString(CryptoJS.enc.Hex),
-        data: encrypted,
-      })
-    }
-
-    it('should write kdf=sha256 into new envelopes', () => {
-      expect(JSON.parse(encrypt('hello', password)).kdf).toBe('sha256')
-    })
-
-    it('should decrypt envelopes without kdf made with SHA256', () => {
-      const envelope = legacyEnvelope(JSON.stringify(testData), password, CryptoJS.algo.SHA256)
-      expect(JSON.parse(decrypt(envelope, password))).toEqual(testData)
-    })
-
-    it('should decrypt envelopes without kdf made with SHA1 (crypto-js < 4.2.0)', () => {
-      const envelope = legacyEnvelope(JSON.stringify(testData), password, CryptoJS.algo.SHA1)
-      expect(JSON.parse(decrypt(envelope, password))).toEqual(testData)
-    })
-
-    it('should not decrypt with a wrong password', () => {
-      const envelope = legacyEnvelope(JSON.stringify(testData), password, CryptoJS.algo.SHA1)
-      let result = ''
-      try { result = decrypt(envelope, 'wrong-password') } catch (_) { /* expected */ }
-      expect(() => JSON.parse(result)).toThrow()
     })
   })
 })

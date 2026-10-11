@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { encrypt, decrypt } from '../../utils/crypto'
 
 // Mock google.accounts.oauth2 for FileSystemDriver googledrive init
 let mockTokenCallback = null
@@ -208,9 +207,9 @@ describe('FileSystemDriver — googledrive type', () => {
     await driver.writeEncryptedJson('passwords-database', data, password)
     expect(storedContent).toBeTruthy()
 
-    // Verify it's actually encrypted (v2 format)
+    // Verify it's actually encrypted (v3 format)
     const parsed = JSON.parse(storedContent)
-    expect(parsed.v).toBe(2)
+    expect(parsed.v).toBe(3)
     expect(parsed.salt).toBeTruthy()
 
     // Read back decrypted
