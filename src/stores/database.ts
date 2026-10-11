@@ -3,6 +3,9 @@ import { ref, computed } from 'vue'
 import { downloadJson } from '@/utils/download'
 import { DecryptionError } from '@/utils/crypto'
 import { NotFoundError, type FileSystemDriver } from '@/services/FileSystemDriver'
+import {
+  normalizePath, parentPath, pathName, joinPath, isWithin, replacePrefix, collectPaths, buildTree,
+} from '@/utils/categories'
 import { useReposStore } from './repos'
 
 export const DATABASE_PATH = 'passwords-database'
@@ -15,6 +18,8 @@ export interface Entry {
 export interface Column {
   label: string
   type: string
+  // Shown as a table column (category is shown as the tree instead)
+  inTable: boolean
 }
 
 export interface Table {
@@ -23,6 +28,8 @@ export interface Table {
   data: Entry[]
   selection_id: number | null
   filter: Record<string, string>
+  // Explicitly created category paths, so empty categories survive saving
+  categories: string[]
 }
 
 /** Shape of the (encrypted) database file — field names are part of the file format */
@@ -32,12 +39,12 @@ export interface Database {
 
 // Table columns in display order
 export const COLUMNS: Record<string, Column> = {
-  category: { label: 'Category', type: 'text' },
-  name: { label: 'Name', type: 'text' },
-  login: { label: 'Login', type: 'text' },
-  password: { label: 'Password', type: 'text' },
-  url: { label: 'URL', type: 'text' },
-  description: { label: 'Description', type: 'textarea' },
+  category: { label: 'Category', type: 'category', inTable: false },
+  name: { label: 'Name', type: 'text', inTable: true },
+  login: { label: 'Login', type: 'text', inTable: true },
+  password: { label: 'Password', type: 'text', inTable: true },
+  url: { label: 'URL', type: 'text', inTable: true },
+  description: { label: 'Description', type: 'textarea', inTable: true },
 }
 
 function errorMessage(error: unknown): string {
@@ -56,6 +63,7 @@ function createEmptyDatabase(): Database {
       data: [],
       selection_id: null,
       filter: emptyFields(),
+      categories: [],
     },
   }
 }
@@ -95,6 +103,7 @@ export function normalizeDatabase(parsed: any): Database {
     for (const [key, value] of Object.entries(entry)) {
       result[key] = key === 'id' ? value : value == null ? '' : String(value)
     }
+    if ('category' in result) result.category = normalizePath(result.category)
     return result
   })
 
@@ -126,6 +135,9 @@ export function normalizeDatabase(parsed: any): Database {
       page: 1,
       data: entries,
       selection_id: null,
+      categories: Array.isArray(table.categories)
+        ? collectPaths(table.categories.filter((path: unknown) => typeof path === 'string'), [])
+        : [],
       filter,
     },
   }
@@ -158,6 +170,15 @@ export const useDatabaseStore = defineStore('database', () => {
   // --- getters ---
   const table = computed(() => database.value.table)
 
+  // All category paths: explicitly created ones plus those used by entries (with ancestors)
+  const categoryPaths = computed(() =>
+    collectPaths(table.value.categories ?? [], table.value.data.map((entry) => entry.category ?? ''))
+  )
+  const categoryTree = computed(() =>
+    buildTree(table.value.categories ?? [], table.value.data.map((entry) => entry.category ?? ''))
+  )
+  const uncategorizedCount = computed(() => table.value.data.filter((entry) => !entry.category).length)
+
   // --- actions ---
   function setFormField(fieldName: string, value: string) {
     form.value[fieldName] = value
@@ -186,6 +207,7 @@ export const useDatabaseStore = defineStore('database', () => {
   function saveEditWindow() {
     const item = editWindow.value.item
     Object.assign(item, form.value)
+    item.category = normalizePath(item.category)
     if (!item.id) {
       item.id = ++table.value.last_index
       table.value.data.push(item)
@@ -194,7 +216,68 @@ export const useDatabaseStore = defineStore('database', () => {
   }
 
   function removeEntry(entry: Entry) {
-    table.value.data = table.value.data.filter((other) => other.id != entry.id)
+    removeEntries([entry.id!])
+  }
+
+  function removeEntries(ids: number[]) {
+    const remove = new Set(ids)
+    table.value.data = table.value.data.filter((entry) => !remove.has(entry.id!))
+    unsavedChanges.value++
+  }
+
+  // --- categories ---
+
+  /** Apply a path rewrite to every entry and to the explicit category list */
+  function rewriteCategories(rewrite: (path: string) => string) {
+    for (const entry of table.value.data) {
+      const path = normalizePath(entry.category)
+      const next = rewrite(path)
+      if (next !== path || entry.category !== path) entry.category = next
+    }
+    table.value.categories = collectPaths((table.value.categories ?? []).map(rewrite), [])
+    unsavedChanges.value++
+  }
+
+  /** Create a category (and its missing parents); returns the normalized path */
+  function createCategory(path: string): string {
+    const normalized = normalizePath(path)
+    if (!normalized) throw new Error('Category name is required')
+    table.value.categories = collectPaths([...(table.value.categories ?? []), normalized], [])
+    unsavedChanges.value++
+    return normalized
+  }
+
+  /** Rename the last segment of a category; subcategories and entries follow. Returns the new path */
+  function renameCategory(path: string, newName: string): string {
+    const name = normalizePath(newName)
+    if (!name) throw new Error('Category name is required')
+    if (name.includes('/')) throw new Error('Category name cannot contain "/"')
+    const target = joinPath(parentPath(path), name)
+    if (target !== path) rewriteCategories((p) => replacePrefix(p, path, target))
+    return target
+  }
+
+  /** Delete a category: its entries and subcategories move up to the parent category */
+  function deleteCategory(path: string) {
+    const parent = parentPath(path)
+    rewriteCategories((p) => replacePrefix(p, path, parent))
+  }
+
+  /** Move a category under another one ('' = root). Returns the new path */
+  function moveCategory(path: string, newParent: string): string {
+    if (isWithin(newParent, path)) throw new Error('A category cannot be moved into itself')
+    const target = joinPath(newParent, pathName(path))
+    if (target !== path) rewriteCategories((p) => replacePrefix(p, path, target))
+    return target
+  }
+
+  /** Set the category of several entries ('' = uncategorized) */
+  function moveEntries(ids: number[], category: string) {
+    const path = normalizePath(category)
+    const move = new Set(ids)
+    for (const entry of table.value.data) {
+      if (move.has(entry.id!)) entry.category = path
+    }
     unsavedChanges.value++
   }
 
@@ -330,6 +413,9 @@ export const useDatabaseStore = defineStore('database', () => {
     columns: COLUMNS,
     database,
     table,
+    categoryPaths,
+    categoryTree,
+    uncategorizedCount,
     form,
     editWindow,
     unsavedChanges,
@@ -343,6 +429,12 @@ export const useDatabaseStore = defineStore('database', () => {
     closeEditWindow,
     saveEditWindow,
     removeEntry,
+    removeEntries,
+    createCategory,
+    renameCategory,
+    deleteCategory,
+    moveCategory,
+    moveEntries,
     exportDatabase,
     importDatabase,
     connectToCurrentRepo,

@@ -51,6 +51,9 @@
       <span class="form-range-value">{{ model }}</span>
     </div>
 
+    <!-- category path with suggestions -->
+    <CategoryInput v-else-if="field.type === 'category'" v-model="model" />
+
     <!-- all other input types (text, email, password, number, url, tel, date, time, etc.) -->
     <input
       v-else
@@ -65,6 +68,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import CategoryInput from './CategoryInput.vue'
 
 const props = defineProps<{
   field: { label: string; type: string; placeholder?: string; items?: { value: string; label: string }[]; min?: number; max?: number }

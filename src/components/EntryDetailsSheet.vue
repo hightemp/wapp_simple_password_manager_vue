@@ -8,11 +8,18 @@
     <dl v-if="entry" class="details">
       <template v-for="(column, key) in columns" :key="key">
         <!-- Name is already the sheet title -->
-        <div v-if="entry[key] && key !== 'name'" class="details-row" :data-field="key">
+        <div v-if="(entry[key] || key === 'category') && key !== 'name'" class="details-row" :data-field="key">
           <dt class="details-label">{{ column.label }}</dt>
           <dd class="details-value">
+            <!-- Category: shown even when empty, with a button to move the entry -->
+            <template v-if="key === 'category'">
+              <span :class="['details-text', { 'details-empty': !entry[key] }]">{{ entry[key] || 'Uncategorized' }}</span>
+              <button class="details-btn" aria-label="Change category" @click="emit('change-category')">
+                <div class="i-lucide-folder-input" />
+              </button>
+            </template>
             <!-- Password -->
-            <template v-if="key === 'password'">
+            <template v-else-if="key === 'password'">
               <span :class="['details-text', 'details-secret', { masked: !isPasswordVisible }]">
                 {{ isPasswordVisible ? entry[key] : '••••••••' }}
               </span>
@@ -70,6 +77,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'copy', field: 'login' | 'password'): void
   (e: 'edit'): void
+  (e: 'change-category'): void
   (e: 'delete'): void
   (e: 'close'): void
 }>()
@@ -127,6 +135,10 @@ watch(() => props.entry, () => { isPasswordVisible.value = false })
 }
 .details-secret.masked {
   letter-spacing: 2px;
+  color: var(--c-text-muted);
+}
+
+.details-empty {
   color: var(--c-text-muted);
 }
 

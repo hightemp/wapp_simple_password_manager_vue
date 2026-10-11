@@ -179,8 +179,8 @@ test.describe('Filtering', () => {
 
     // Filter by 'Alpha'
     const filterInputs = page.locator('.filter-input')
-    // Name column filter (second column — index 1)
-    await filterInputs.nth(1).fill('Alpha')
+    // Name is the first column (category is shown as the tree)
+    await filterInputs.nth(0).fill('Alpha')
 
     // Wait for debounce
     await page.waitForTimeout(500)
@@ -191,20 +191,19 @@ test.describe('Filtering', () => {
     await expect(page.locator('text=Alpha')).toBeVisible()
 
     // Clear filter
-    await filterInputs.nth(1).clear()
+    await filterInputs.nth(0).clear()
     await page.waitForTimeout(500)
     await expect(rows).toHaveCount(2)
   })
 
   test('should filter from last page with 30+ entries', async ({ page }) => {
     test.setTimeout(90_000) // Adding many entries is slow
-    // Add 30 entries; give entry #15 a unique category for filtering
+    // Add 30 entries; give entry #15 a unique name for filtering
     for (let i = 1; i <= 30; i++) {
       await page.locator('.sidebar-btn[aria-label="Add"]').click()
       await expect(page.locator('.modal-panel')).toBeVisible()
       const inputs = page.locator('.modal-panel .form-field-input')
-      await inputs.nth(0).fill(i === 15 ? 'UniqueCategory' : `Bulk${i}`)
-      await inputs.nth(1).fill(`Item ${i}`)
+      await inputs.nth(1).fill(i === 15 ? 'Unique Item' : `Item ${i}`)
       await page.locator('button:has-text("Save")').click()
       await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
     }
@@ -220,16 +219,15 @@ test.describe('Filtering', () => {
     const parts = infoText!.trim().split('/')
     expect(parts[0].trim()).toBe(parts[1].trim()) // on last page
 
-    // Now filter by the unique category
+    // Now filter by the unique name (Name is the first column)
     const filterInputs = page.locator('.filter-input')
-    // Category is the first column (index 0)
-    await filterInputs.nth(0).fill('UniqueCategory')
+    await filterInputs.nth(0).fill('Unique')
     await page.waitForTimeout(500)
 
     // Only 1 entry should match; pagination should disappear or reset to page 1
     const rows = page.locator('.grid-row:not(.grid-header)')
     await expect(rows).toHaveCount(1)
-    await expect(page.locator('text=Item 15')).toBeVisible()
+    await expect(page.locator('text=Unique Item')).toBeVisible()
 
     // Clear filter — all 30 entries should be back
     await filterInputs.nth(0).clear()
@@ -560,6 +558,159 @@ test.describe('Import & Export', () => {
   })
 })
 
+test.describe('Categories', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+  })
+
+  async function addEntry(page: Page, name: string, category = '') {
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    const inputs = page.locator('.modal-panel .form-field-input')
+    if (category) await inputs.nth(0).fill(category)
+    await inputs.nth(1).fill(name)
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+  }
+
+  const node = (page: Page, path: string) => page.locator(`.cat-row[data-path="${path}"]`)
+  const count = (page: Page, path: string) => node(page, path).locator('.cat-count')
+  const rows = (page: Page) => page.locator('.grid-row:not(.grid-header)')
+
+  async function seed(page: Page) {
+    await addEntry(page, 'Outlook', 'Work/Email')
+    await addEntry(page, 'Prod SSH', 'Work/Servers')
+    await addEntry(page, 'Netflix', 'Personal')
+    await addEntry(page, 'Misc')
+  }
+
+  test('should show the tree with counts and filter the table', async ({ page }) => {
+    await seed(page)
+    // Category is shown as the tree, not as a table column
+    await expect(page.locator('.grid-header')).not.toContainText('Category')
+
+    await expect(count(page, '*')).toHaveText('4')
+    await expect(count(page, 'Work')).toHaveText('2')
+    await expect(count(page, '')).toHaveText('1')
+    await expect(node(page, 'Work/Email')).toHaveCount(0)
+    await node(page, 'Work').locator('.cat-chevron').click()
+    await expect(count(page, 'Work/Email')).toHaveText('1')
+
+    await node(page, 'Work').click()
+    await expect(rows(page)).toHaveCount(2)
+    await node(page, 'Work/Email').click()
+    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('Outlook')
+    await node(page, '').click()
+    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('Misc')
+  })
+
+  test('should create, rename and delete categories', async ({ page }) => {
+    await seed(page)
+
+    await page.locator('[aria-label="New category"]').click()
+    await page.locator('.cat-input').fill('Archive')
+    await page.locator('.cat-input').press('Enter')
+    await expect(count(page, 'Archive')).toHaveText('0')
+    await expect(page.locator('.notification')).toHaveCount(0)
+
+    await node(page, 'Work').hover()
+    await node(page, 'Work').locator('[aria-label="Rename category"]').click()
+    await page.locator('.cat-input').fill('Job')
+    await page.locator('.cat-input').press('Enter')
+    await expect(node(page, 'Work')).toHaveCount(0)
+    await expect(count(page, 'Job')).toHaveText('2')
+
+    // Deleting moves entries and subcategories up — nothing is deleted
+    await node(page, 'Job').hover()
+    await node(page, 'Job').locator('[aria-label="Delete category"]').click()
+    await page.locator('.modal-panel button:has-text("Delete")').click()
+    await expect(node(page, 'Job')).toHaveCount(0)
+    await expect(count(page, 'Email')).toHaveText('1')
+    await expect(count(page, 'Servers')).toHaveText('1')
+    await expect(count(page, '*')).toHaveText('4')
+  })
+
+  test('should move entries by drag and drop, one or several', async ({ page }) => {
+    await seed(page)
+    await rows(page).filter({ hasText: 'Misc' }).dragTo(node(page, 'Personal'))
+    await expect(count(page, 'Personal')).toHaveText('2')
+    await expect(count(page, '')).toHaveText('0')
+
+    // Ctrl+click selects several rows; dragging one of them moves all
+    await rows(page).filter({ hasText: 'Outlook' }).click()
+    await rows(page).filter({ hasText: 'Prod SSH' }).click({ modifiers: ['ControlOrMeta'] })
+    await expect(page.locator('.grid-row.active')).toHaveCount(2)
+    await rows(page).filter({ hasText: 'Outlook' }).dragTo(node(page, ''))
+    await expect(count(page, '')).toHaveText('2')
+    await expect(node(page, 'Work')).toHaveCount(0)
+  })
+
+  test('should move a category into another one and back to the root', async ({ page }) => {
+    await seed(page)
+    await node(page, 'Personal').dragTo(node(page, 'Work'))
+    await expect(node(page, 'Personal')).toHaveCount(0)
+    await expect(count(page, 'Work')).toHaveText('3')
+
+    // The moved category is revealed (its new parent is expanded)
+    await node(page, 'Work/Personal').dragTo(node(page, '*'))
+    await expect(count(page, 'Personal')).toHaveText('1')
+    await expect(count(page, 'Work')).toHaveText('2')
+  })
+
+  test('should select a range with Shift and delete several entries', async ({ page }) => {
+    await seed(page)
+    await rows(page).nth(0).click()
+    await rows(page).nth(2).click({ modifiers: ['Shift'] })
+    await expect(page.locator('.grid-row.active')).toHaveCount(3)
+
+    await page.keyboard.press('Delete')
+    await expect(page.locator('.modal-panel')).toContainText('Delete 3 selected entries?')
+    await page.locator('.modal-panel button:has-text("Delete")').click()
+    await expect(rows(page)).toHaveCount(1)
+  })
+
+  test('should suggest categories in the entry form and create new ones', async ({ page }) => {
+    await seed(page)
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    const category = page.locator('.modal-panel .form-field-input').first()
+    await category.fill('serv')
+    await expect(page.locator('.cat-option')).toHaveText(['Work/Servers', 'Create "serv"'])
+    await category.press('ArrowDown')
+    await category.press('Enter')
+    await expect(category).toHaveValue('Work/Servers')
+
+    await category.fill('Work / Cloud ')
+    await page.locator('.cat-option--new').click()
+    await page.locator('.modal-panel .form-field-input').nth(1).fill('AWS')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await node(page, 'Work').locator('.cat-chevron').click()
+    await expect(count(page, 'Work/Cloud')).toHaveText('1')
+  })
+
+  test('should remember the selected category and expanded nodes after reload', async ({ page }) => {
+    await seed(page)
+    await page.locator('.sidebar-btn[aria-label="Save"]').click()
+    await node(page, 'Work').locator('.cat-chevron').click()
+    await node(page, 'Work/Servers').click()
+    await expect(rows(page)).toHaveCount(1)
+
+    await page.reload()
+    await connectLocalStorage(page)
+    await expect(node(page, 'Work/Servers')).toHaveClass(/cat-row--selected/)
+    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('Prod SSH')
+  })
+
+  test('should collapse the category panel', async ({ page }) => {
+    await page.locator('[aria-label="Hide categories"]').click()
+    await expect(page.locator('.cat-tree')).toHaveCount(0)
+    await page.locator('[aria-label="Show categories"]').click()
+    await expect(page.locator('.cat-tree')).toBeVisible()
+  })
+})
+
 test.describe('Mobile', { tag: '@mobile' }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
@@ -719,6 +870,46 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
 
     await expect(page.locator('.modal-panel:has-text("Repository Settings")')).toBeVisible()
     await expect(page.locator('.entry-card')).toHaveCount(0)
+  })
+
+  test('should filter by category from the category sheet', async ({ page }) => {
+    await addEntry(page, { name: 'Outlook' })
+    await page.locator('.bottom-nav [aria-label="Add"]').click()
+    const inputs = page.locator('.modal-panel .form-field-input')
+    await inputs.nth(0).fill('Work/Email')
+    await inputs.nth(1).fill('Gmail')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+
+    await page.locator('[aria-label="Choose category"]').click()
+    await page.locator('.modal-panel .cat-row[data-path="Work"]').click()
+    await expect(page.locator('.entry-card')).toHaveCount(1)
+    await expect(page.locator('.entry-card')).toContainText('Gmail')
+    await expect(page.locator('[aria-label="Choose category"]')).toContainText('Work')
+
+    await page.locator('[aria-label="Choose category"]').click()
+    await page.locator('.modal-panel .cat-row[data-path=""]').click()
+    await expect(page.locator('.entry-card')).toHaveCount(1)
+    await expect(page.locator('.entry-card')).toContainText('Outlook')
+    await expectNoHorizontalScroll(page)
+  })
+
+  test('should move an entry to another category from its details', async ({ page }) => {
+    await page.locator('.bottom-nav [aria-label="Add"]').click()
+    const inputs = page.locator('.modal-panel .form-field-input')
+    await inputs.nth(0).fill('Personal')
+    await inputs.nth(1).fill('Netflix')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+    await addEntry(page, { name: 'Misc' })
+
+    await page.locator('.entry-card:has-text("Misc")').click()
+    await expect(page.locator('.modal-panel [data-field="category"]')).toContainText('Uncategorized')
+    await page.locator('[aria-label="Change category"]').click()
+    await page.locator('.modal-panel:has-text("Move to category") .cat-row[data-path="Personal"]').click()
+
+    await expect(page.locator('.modal-panel [data-field="category"]')).toContainText('Personal')
+    await expect(page.locator('.notification:has-text("Entry moved")')).toBeVisible()
   })
 })
 

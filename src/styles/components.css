@@ -146,3 +146,17 @@
 .error-slide-leave-from {
   max-height: 80px;
 }
+
+/* Drag image for table rows (appended to <body>, so it must be global) */
+.drag-badge {
+  position: fixed;
+  top: -100px;
+  left: -100px;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--c-accent);
+  color: white;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}

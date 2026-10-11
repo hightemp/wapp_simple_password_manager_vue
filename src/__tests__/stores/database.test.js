@@ -331,4 +331,79 @@ describe('Database Store (Pinia)', () => {
       expect(db.connectionError).toMatch(/damaged/)
     })
   })
+
+  describe('categories', () => {
+    function seed(categories, explicit = []) {
+      db.setDatabase({
+        table: {
+          last_index: categories.length, page: 1, selection_id: null, filter: {},
+          categories: explicit,
+          data: categories.map((category, i) => ({ id: i + 1, name: 'E' + (i + 1), category })),
+        },
+      })
+    }
+    const categoryOf = (id) => db.table.data.find((e) => e.id === id).category
+
+    it('should derive paths and counts from entries and explicit categories', () => {
+      seed(['Work/Email', 'Work', ''], ['Empty'])
+      expect(db.categoryPaths).toEqual(['Empty', 'Work', 'Work/Email'])
+      expect(db.categoryTree.find((n) => n.path === 'Work').count).toBe(2)
+      expect(db.uncategorizedCount).toBe(1)
+    })
+
+    it('should create categories with their parents', () => {
+      seed([])
+      expect(db.createCategory(' A / B ')).toBe('A/B')
+      expect(db.categoryPaths).toEqual(['A', 'A/B'])
+      expect(db.unsavedChanges).toBe(1)
+    })
+
+    it('should rename a category with its subcategories and entries', () => {
+      seed(['Work', 'Work/Email', 'Workshop'], ['Work/Empty'])
+      expect(db.renameCategory('Work', 'Job')).toBe('Job')
+      expect([1, 2, 3].map(categoryOf)).toEqual(['Job', 'Job/Email', 'Workshop'])
+      expect(db.table.categories).toEqual(['Job', 'Job/Empty'])
+      expect(() => db.renameCategory('Job', 'a/b')).toThrow()
+    })
+
+    it('should move contents to the parent when deleting a category', () => {
+      seed(['Work/Email', 'Work/Email/Old', 'Work'])
+      db.deleteCategory('Work/Email')
+      expect([1, 2, 3].map(categoryOf)).toEqual(['Work', 'Work/Old', 'Work'])
+
+      db.deleteCategory('Work')
+      expect([1, 2, 3].map(categoryOf)).toEqual(['', 'Old', ''])
+    })
+
+    it('should move a category under another one but not into itself', () => {
+      seed(['Email', 'Email/Old', 'Work'])
+      expect(db.moveCategory('Email', 'Work')).toBe('Work/Email')
+      expect([1, 2, 3].map(categoryOf)).toEqual(['Work/Email', 'Work/Email/Old', 'Work'])
+      expect(() => db.moveCategory('Work', 'Work/Email')).toThrow(/into itself/)
+      expect(db.moveCategory('Work/Email', '')).toBe('Email')
+    })
+
+    it('should move and remove several entries', () => {
+      seed(['A', 'B', 'C'])
+      db.moveEntries([1, 3], ' X / Y ')
+      expect([1, 2, 3].map(categoryOf)).toEqual(['X/Y', 'B', 'X/Y'])
+      db.removeEntries([1, 2])
+      expect(db.table.data.map((e) => e.id)).toEqual([3])
+    })
+
+    it('should normalize the category when saving an entry', () => {
+      seed([])
+      db.openEditWindow({})
+      db.setFormField('name', 'N')
+      db.setFormField('category', ' Work // Mail ')
+      db.saveEditWindow()
+      expect(db.table.data[0].category).toBe('Work/Mail')
+    })
+
+    it('should keep explicit categories when importing', () => {
+      db.importDatabase(JSON.stringify({ table: { data: [{ category: 'A//B' }], categories: ['Empty', 5] } }))
+      expect(db.table.categories).toEqual(['Empty'])
+      expect(db.table.data[0].category).toBe('A/B')
+    })
+  })
 })

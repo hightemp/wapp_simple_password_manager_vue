@@ -24,6 +24,10 @@
             aria-label="Search entries"
             autocomplete="off"
           />
+          <button class="mobile-category-btn" aria-label="Choose category" @click="categoryPicker = { mode: 'filter' }">
+            <div class="i-lucide-folder" />
+            <span class="mobile-category-name">{{ categoryLabel }}</span>
+          </button>
         </div>
         <div class="mobile-list-scroll">
           <EntryCardList
@@ -36,8 +40,10 @@
         </div>
       </template>
 
-      <!-- ===== Desktop: paginated table ===== -->
-      <template v-else>
+      <!-- ===== Desktop: category panel + paginated table ===== -->
+      <div v-else class="desktop-layout">
+      <CategoryPanel />
+      <div class="table-area">
       <!-- Pagination bar -->
       <div class="pagination-bar" v-if="pageCount > 1">
         <button class="pg-btn" @click="goToFirstPage" :disabled="page <= 1" aria-label="First page">
@@ -100,10 +106,14 @@
             <div
               v-for="(row, index) in pageRows"
               :key="row.id ?? index"
-              :class="['grid-row', { active: selectedEntry && selectedEntry.id === row.id }]"
+              :class="['grid-row', { active: selectedIds.has(row.id!) }]"
               :style="gridStyle"
               role="row"
-              @click="selectRow(row)"
+              :aria-selected="selectedIds.has(row.id!)"
+              draggable="true"
+              @mousedown="(event) => event.shiftKey && event.preventDefault()"
+              @click="selectRow(row, $event)"
+              @dragstart="onRowDragStart($event, row)"
               @dblclick="editSelected"
               @contextmenu.prevent="openContextMenu($event, row)"
             >
@@ -148,8 +158,8 @@
           </TransitionGroup>
         </div>
       </div>
-
-      </template>
+      </div>
+      </div>
     </main>
 
     <EntryContextMenu
@@ -174,8 +184,18 @@
       :entry="detailsEntry"
       @copy="(field) => copyField(detailsEntry, field)"
       @edit="editFromDetails"
+      @change-category="categoryPicker = { mode: 'move', entry: detailsEntry! }"
       @delete="deleteFromDetails"
       @close="detailsEntry = null"
+    />
+    <!-- After the details sheet so it opens on top of it -->
+    <CategoryPickerSheet
+      :model-value="categoryPicker !== null"
+      :title="categoryPicker?.mode === 'move' ? 'Move to category' : 'Categories'"
+      :selected="categoryPicker?.mode === 'move' ? (categoryPicker.entry?.category ?? '') : activeCategory"
+      :show-all="categoryPicker?.mode !== 'move'"
+      @update:model-value="(open) => !open && (categoryPicker = null)"
+      @pick="onCategoryPicked"
     />
   </div>
 
@@ -197,6 +217,8 @@ import { debounce } from '@/utils/debounce'
 import { copySecret, CLIPBOARD_CLEAR_DELAY } from '@/utils/clipboard'
 import { NOTIFY_KEY, type NotifyFn } from '@/composables/useNotify'
 import { useMediaQuery, MOBILE_QUERY } from '@/composables/useMediaQuery'
+import { useCategoryState, type CategorySelection } from '@/composables/useCategoryState'
+import { isWithin, pathName, ENTRIES_DRAG_TYPE } from '@/utils/categories'
 import { CONFIRM_KEY, type ConfirmFn } from '@/composables/useConfirm'
 import type { MenuAction } from '@/types/menu'
 
@@ -205,6 +227,8 @@ import BottomNav from '@/components/BottomNav.vue'
 import MobileMenuSheet from '@/components/MobileMenuSheet.vue'
 import EntryCardList from '@/components/EntryCardList.vue'
 import EntryDetailsSheet from '@/components/EntryDetailsSheet.vue'
+import CategoryPanel from '@/components/CategoryPanel.vue'
+import CategoryPickerSheet from '@/components/CategoryPickerSheet.vue'
 import EntryEditModal from '@/components/EntryEditModal.vue'
 import EntryContextMenu from '@/components/EntryContextMenu.vue'
 import RepoSettingsModal from '@/components/RepoSettingsModal.vue'
@@ -258,6 +282,36 @@ const isMobile = useMediaQuery(MOBILE_QUERY)
 const searchQuery = ref('')
 // Entry shown in the mobile details sheet
 const detailsEntry = ref<Entry | null>(null)
+
+// --- categories ---
+const { selected: selectedCategory, effectiveSelection } = useCategoryState()
+// Category the list is filtered by: null = all, '' = uncategorized
+const activeCategory = computed(() => effectiveSelection(db.categoryPaths))
+const categoryLabel = computed(() => {
+  const category = activeCategory.value
+  if (category === null) return 'All'
+  return category === '' ? 'Uncategorized' : pathName(category)
+})
+// Mobile category sheet: filter the list, or move one entry
+const categoryPicker = ref<{ mode: 'filter' } | { mode: 'move'; entry: Entry } | null>(null)
+
+function onCategoryPicked(path: CategorySelection) {
+  const picker = categoryPicker.value
+  categoryPicker.value = null
+  if (picker?.mode === 'move') {
+    db.moveEntries([picker.entry.id!], path ?? '')
+    notify('Entry moved', path ? `to "${path}"` : 'to Uncategorized', 'success', 2000)
+  } else {
+    selectedCategory.value = path
+  }
+}
+
+function inActiveCategory(entry: Entry): boolean {
+  const category = activeCategory.value
+  if (category === null) return true
+  if (category === '') return !entry.category
+  return isWithin(entry.category ?? '', category)
+}
 let autoLockTimer: ReturnType<typeof setTimeout> | null = null
 
 // Sorting
@@ -268,7 +322,10 @@ const sortAsc = ref(true)
 const contextMenu = reactive({ entry: null as any, x: 0, y: 0 })
 
 // --- computed ---
-const columns = computed(() => db.columns)
+// Table columns (category is shown as the tree instead)
+const columns = computed(() =>
+  Object.fromEntries(Object.entries(db.columns).filter(([, column]) => column.inTable))
+)
 const table = computed(() => db.table)
 
 const gridStyle = computed(() => {
@@ -292,16 +349,16 @@ function matchesSearch(entry: Entry, query: string): boolean {
 }
 
 const filteredRows = computed(() => {
-  let rows: Entry[]
+  let rows = table.value.data.filter(inActiveCategory)
   if (isMobile.value) {
     // Column filters are not visible on mobile — use the search field only
     const query = searchQuery.value.trim().toLowerCase()
-    rows = query ? table.value.data.filter((entry) => matchesSearch(entry, query)) : table.value.data
+    if (query) rows = rows.filter((entry) => matchesSearch(entry, query))
   } else {
+    // Only filters of visible columns apply (a stored filter on a hidden column is ignored)
     const filter = table.value.filter
-    rows = table.value.data.filter((entry) =>
-      Object.keys(filter).every((key) => !filter[key] || String(entry[key] ?? '').includes(filter[key]))
-    )
+    const keys = Object.keys(columns.value).filter((key) => filter[key])
+    rows = rows.filter((entry) => keys.every((key) => String(entry[key] ?? '').includes(filter[key])))
   }
 
   if (sortKey.value) {
@@ -377,7 +434,7 @@ const onFilterInput = debounce((event: Event, key: string) => {
 }, 300)
 
 function openContextMenu(event: MouseEvent, row: any) {
-  selectedEntry.value = row
+  if (!selectedIds.value.has(row.id)) selectSingle(row)
   contextMenu.entry = row
   contextMenu.x = event.clientX
   contextMenu.y = event.clientY
@@ -388,10 +445,81 @@ function closeContextMenu() {
 }
 
 // --- selection ---
-function selectRow(row: any) {
+// --- multi-selection: Ctrl/⌘+click toggles, Shift+click selects a range ---
+const selectedIds = ref(new Set<number>())
+let anchorId: number | null = null
+
+// Any single selection (keyboard, context menu, …) replaces the multi-selection
+watch(selectedEntry, (entry) => {
+  if (!entry) selectedIds.value = new Set()
+  else if (!selectedIds.value.has(entry.id)) selectedIds.value = new Set([entry.id])
+})
+
+/** Keyboard navigation works on a single row */
+function collapseSelection() {
+  const entry = selectedEntry.value
+  selectedIds.value = new Set(entry ? [entry.id] : [])
+}
+
+function selectSingle(row: any) {
+  selectedIds.value = new Set([row.id])
   selectedEntry.value = row
+  anchorId = row.id
+}
+
+function selectRow(row: any, event?: MouseEvent) {
+  if (event && (event.ctrlKey || event.metaKey)) {
+    const ids = new Set(selectedIds.value)
+    if (ids.has(row.id)) {
+      ids.delete(row.id)
+      selectedIds.value = ids
+      if (selectedEntry.value?.id === row.id) {
+        const nextId = [...ids].pop()
+        selectedEntry.value = table.value.data.find((entry) => entry.id === nextId) ?? null
+      }
+    } else {
+      ids.add(row.id)
+      selectedIds.value = ids
+      selectedEntry.value = row
+    }
+    anchorId = row.id
+  } else if (event?.shiftKey && anchorId !== null) {
+    const rows = filteredRows.value
+    const from = rows.findIndex((entry) => entry.id === anchorId)
+    const to = rows.findIndex((entry) => entry.id === row.id)
+    if (from === -1) {
+      selectSingle(row)
+    } else {
+      const [start, end] = from < to ? [from, to] : [to, from]
+      selectedIds.value = new Set(rows.slice(start, end + 1).map((entry) => entry.id!))
+      selectedEntry.value = row
+    }
+  } else {
+    selectSingle(row)
+  }
   // Focus the grid so keyboard navigation works
   dataGrid.value?.focus()
+}
+
+function onRowDragStart(event: DragEvent, row: any) {
+  if (!event.dataTransfer) return
+  // Dragging an unselected row drags just that row
+  if (!selectedIds.value.has(row.id)) selectSingle(row)
+  const ids = [...selectedIds.value]
+  event.dataTransfer.setData(ENTRIES_DRAG_TYPE, JSON.stringify(ids))
+  event.dataTransfer.setData('text/plain', ids.length === 1 ? (row.name || 'entry') : `${ids.length} entries`)
+  event.dataTransfer.effectAllowed = 'move'
+  setDragLabel(event.dataTransfer, ids.length === 1 ? (row.name || '(no name)') : `${ids.length} entries`)
+}
+
+/** Small "N entries" badge instead of the browser's snapshot of the whole row */
+function setDragLabel(dataTransfer: DataTransfer, label: string) {
+  const badge = document.createElement('div')
+  badge.className = 'drag-badge'
+  badge.textContent = label
+  document.body.appendChild(badge)
+  dataTransfer.setDragImage(badge, 12, 12)
+  setTimeout(() => badge.remove())
 }
 
 function selectNext() {
@@ -473,8 +601,19 @@ async function deleteFromDetails() {
   if (await deleteEntry(detailsEntry.value)) detailsEntry.value = null
 }
 
-function deleteSelected() {
-  if (selectedEntry.value) {
+async function deleteSelected() {
+  const ids = [...selectedIds.value]
+  if (ids.length > 1) {
+    const confirmed = await confirmAction({
+      title: 'Delete entries',
+      message: `Delete ${ids.length} selected entries?`,
+      confirmText: 'Delete',
+      danger: true,
+    })
+    if (!confirmed) return
+    db.removeEntries(ids)
+    selectedEntry.value = null
+  } else if (selectedEntry.value) {
     deleteEntry(selectedEntry.value)
   } else {
     notifyNoSelection()
@@ -569,6 +708,7 @@ async function lockApp() {
   showChangePassword.value = false
   showMobileMenu.value = false
   detailsEntry.value = null
+  categoryPicker.value = null
   searchQuery.value = ''
   try {
     await db.lock()
@@ -623,8 +763,8 @@ function onKeydown(event: KeyboardEvent) {
   // Arrow key navigation (only when no input/textarea is focused)
   if (!isInputFocused() && !event.ctrlKey && !event.altKey && !event.metaKey) {
     const navigation: Record<string, () => void> = {
-      ArrowDown: () => { selectNext(); dataGrid.value?.focus() },
-      ArrowUp: () => { selectPrev(); dataGrid.value?.focus() },
+      ArrowDown: () => { selectNext(); collapseSelection(); dataGrid.value?.focus() },
+      ArrowUp: () => { selectPrev(); collapseSelection(); dataGrid.value?.focus() },
       ArrowRight: goToNextPage,
       ArrowLeft: goToPrevPage,
       Home: goToFirstPage,
@@ -1018,6 +1158,21 @@ onUnmounted(() => {
   clip: rect(0, 0, 0, 0);
   border: 0;
 }
+/* ===== Desktop: category panel + table ===== */
+.desktop-layout {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.table-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
 /* ===== Mobile: search + card list ===== */
 .mobile-search {
   position: relative;
@@ -1049,6 +1204,28 @@ onUnmounted(() => {
 }
 .mobile-search-input:focus {
   border-color: var(--c-accent);
+}
+
+.mobile-category-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 40%;
+  height: 44px;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  font-size: var(--text-base);
+}
+
+.mobile-category-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mobile-list-scroll {

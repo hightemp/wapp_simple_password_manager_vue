@@ -37,7 +37,7 @@ A self-hosted, encrypted password manager built with Vue 3. Store your passwords
 - **Vite 6** — fast builds with HMR
 - **UnoCSS** — atomic CSS with custom design tokens
 - **Lucide Icons** — clean, consistent icon set
-- **Vitest** — 75 unit tests (crypto, debounce, stores, FileSystemDriver, Google Drive client)
+- **Vitest** — 114 unit tests (crypto, debounce, stores, FileSystemDriver, Google Drive client)
 - **Web Crypto API** — native browser encryption (AES-256-GCM + PBKDF2)
 - **crypto-js** — only for reading legacy (v1/v2) database files
 
@@ -91,18 +91,32 @@ Click **Connect** to unlock the database. Then:
 
 - **Add** — create new password entries
 - **Edit** — double-click a row or select + Edit
-- **Delete** — select a row + Delete (with confirmation)
+- **Delete** — select rows + Delete (with confirmation)
+- **Select several** — Ctrl/⌘+click toggles a row, Shift+click selects a range
 - **Save** — persist changes to the repository
 - **Filter** — type in any column header to filter entries
 - **Copy** — click the copy icon on login/password cells (the clipboard is cleared after 30 s)
+
+### Categories
+
+The panel on the left shows categories as a tree with entry counts (a category's count includes its subcategories):
+
+- **Filter** — click a category (or **All** / **Uncategorized**) to show its entries, incl. subcategories
+- **Create / rename / delete** — the folder button in the panel header, or the buttons that appear on hover. Deleting a category moves its entries and subcategories one level up; no entries are deleted
+- **Move entries** — drag one or several selected rows onto a category (or onto **Uncategorized**)
+- **Move categories** — drag a category onto another one, or onto **All** to move it to the top level
+- **In the entry form** — type a path like `Work/Email`; existing categories are suggested, a new path creates the category
+- The panel can be collapsed and resized; the selected category and expanded folders are remembered in the browser
+
+Categories are stored as paths in the `category` field of each entry, so databases from older versions keep their categories as top-level ones.
 
 ### On a phone
 
 Below 768 px the app switches to a mobile layout:
 
-- **Search** — one field at the top searches all fields
+- **Search** — one field at the top searches all fields; the button next to it picks a category
 - **Entries** — a scrolling list of cards; the buttons on a card copy the login / password
-- **Details** — tap a card to see all fields, reveal or copy the password, open the URL, **Edit** or **Delete**
+- **Details** — tap a card to see all fields, reveal or copy the password, open the URL, move it to another category, **Edit** or **Delete**
 - **Bottom bar** — Repository · Add · Save · **More** (export, import, change master password, theme, lock)
 
 ## Security
@@ -169,6 +183,10 @@ src/
 │   ├── AppSidebar.vue         # Desktop sidebar menu
 │   ├── BottomNav.vue          # Mobile bottom navigation
 │   ├── BaseModal.vue          # Reusable modal with focus trap
+│   ├── CategoryInput.vue      # Category field with suggestions
+│   ├── CategoryPanel.vue      # Desktop: collapsible, resizable category panel
+│   ├── CategoryPickerSheet.vue    # Mobile: pick a category (filter / move)
+│   ├── CategoryTree.vue       # Category tree with counts and drag & drop
 │   ├── ChangePasswordModal.vue    # Change master password
 │   ├── ConfirmDialog.vue      # Confirmation dialog (replaces confirm())
 │   ├── EntryCardList.vue      # Mobile: list of entry cards
@@ -184,6 +202,7 @@ src/
 │   ├── PasswordGenerator.vue  # Password generator panel
 │   └── RepoSettingsModal.vue  # Repository settings (split-view)
 ├── composables/
+│   ├── useCategoryState.ts    # Selected / expanded categories, panel size (per browser)
 │   ├── useConfirm.ts          # Confirmation dialog via provide/inject
 │   ├── useMediaQuery.ts       # Reactive media query (mobile layout switch)
 │   └── useNotify.ts           # Toast notifications via provide/inject
@@ -196,6 +215,7 @@ src/
 ├── types/
 │   └── menu.ts                # Sidebar / bottom nav actions
 ├── utils/
+│   ├── categories.ts          # Category paths and tree building
 │   ├── clipboard.ts           # Copy secrets, auto-clear the clipboard
 │   ├── crypto.ts              # AES-256-GCM encryption (reads legacy v1/v2 formats)
 │   ├── debounce.ts
