@@ -391,8 +391,13 @@ function deleteSelected() {
   }
 }
 
-function saveAll() {
-  db.saveToAllRepos()
+async function saveAll() {
+  try {
+    await db.saveToAllRepos()
+  } catch (error) {
+    notify('Save failed', error instanceof Error ? error.message : String(error), 'error', 8000)
+    return
+  }
   justSaved.value = true
   setTimeout(() => { justSaved.value = false }, 2000)
   notify('Saved', 'Data has been saved', 'success')
@@ -438,12 +443,25 @@ function onMenuAction(action: MenuAction) {
 // --- auto lock ---
 function resetAutoLock() {
   if (autoLockTimer) clearTimeout(autoLockTimer)
-  autoLockTimer = setTimeout(() => {
-    if (db.masterPassword) {
-      db.masterPassword = ''
-      db.isRepoWindowOpen = true
-    }
-  }, AUTO_LOCK_TIMEOUT)
+  autoLockTimer = setTimeout(lockApp, AUTO_LOCK_TIMEOUT)
+}
+
+async function lockApp() {
+  if (!db.masterPassword) return
+  selectedEntry.value = null
+  revealedRows.clear()
+  closeContextMenu()
+  showChangePassword.value = false
+  try {
+    await db.lock()
+  } catch (error) {
+    notify(
+      'Locked — unsaved changes were lost',
+      error instanceof Error ? error.message : String(error),
+      'error',
+      15000,
+    )
+  }
 }
 
 // --- keyboard ---

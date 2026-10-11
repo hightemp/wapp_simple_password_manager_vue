@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useDatabaseStore } from '../../stores/database'
+import { useReposStore } from '../../stores/repos'
 
 describe('Database Store (Pinia)', () => {
   let db
@@ -145,6 +146,90 @@ describe('Database Store (Pinia)', () => {
     it('should get field value', () => {
       db.setFormField('table', 'name', 'hello')
       expect(db.getFormField('table', 'name')).toBe('hello')
+    })
+  })
+
+  describe('saving', () => {
+    function addEntry(name) {
+      db.openEditWindow('table', {})
+      db.setFormField('table', 'name', name)
+      db.saveEditWindow('table', 'table')
+    }
+
+    it('should reset unsaved changes after a successful save', async () => {
+      const repos = useReposStore()
+      repos.selectRepo(0)
+      db.masterPassword = 'secret'
+      addEntry('Item')
+
+      await db.saveToAllRepos()
+      expect(db.unsavedChanges).toBe(0)
+    })
+
+    it('should reject and keep unsaved changes when a repo fails', async () => {
+      const repos = useReposStore()
+      repos.selectRepo(0)
+      repos.fileSystems[0] = {
+        writeEncryptedJson: () => Promise.reject(new Error('boom')),
+        readFile: () => Promise.reject(new Error('still boom')),
+      }
+      db.masterPassword = 'secret'
+      addEntry('Item')
+
+      await expect(db.saveToAllRepos()).rejects.toThrow(/Local Storage/)
+      expect(db.unsavedChanges).toBe(1)
+    })
+  })
+
+  describe('lock', () => {
+    it('should wipe decrypted data and the master password', async () => {
+      db.masterPassword = 'secret'
+      db.setDatabase({ table: { last_index: 1, page: 1, data: [{ id: 1, name: 'x' }], selection_id: null, filter: {} } })
+      db.setFormField('table', 'password', 'p@ss')
+      db.isRepoWindowOpen = false
+
+      await db.lock()
+
+      expect(db.masterPassword).toBe('')
+      expect(db.database.table.data).toEqual([])
+      expect(db.forms.table.password).toBe('')
+      expect(db.isRepoWindowOpen).toBe(true)
+    })
+
+    it('should save unsaved changes before locking', async () => {
+      const repos = useReposStore()
+      repos.selectRepo(0)
+      const writes = []
+      repos.fileSystems[0] = {
+        writeEncryptedJson: (path, value) => { writes.push(JSON.parse(JSON.stringify(value))); return Promise.resolve() },
+        readFile: () => Promise.resolve({ data: '', sha: '' }),
+      }
+      db.masterPassword = 'secret'
+      db.openEditWindow('table', {})
+      db.setFormField('table', 'name', 'Unsaved')
+      db.saveEditWindow('table', 'table')
+
+      await db.lock()
+
+      expect(writes.length).toBe(1)
+      expect(writes[0].table.data[0].name).toBe('Unsaved')
+      expect(db.database.table.data).toEqual([])
+    })
+
+    it('should still lock when saving fails', async () => {
+      const repos = useReposStore()
+      repos.selectRepo(0)
+      repos.fileSystems[0] = {
+        writeEncryptedJson: () => Promise.reject(new Error('offline')),
+        readFile: () => Promise.reject(new Error('offline')),
+      }
+      db.masterPassword = 'secret'
+      db.openEditWindow('table', {})
+      db.saveEditWindow('table', 'table')
+
+      await expect(db.lock()).rejects.toThrow(/offline/)
+      expect(db.masterPassword).toBe('')
+      expect(db.database.table.data).toEqual([])
     })
   })
 })

@@ -157,4 +157,45 @@ describe('Crypto module', () => {
       expect(generated1).not.toBe(generated2)
     })
   })
+
+  describe('PBKDF2 hasher compatibility', { timeout: 30000 }, () => {
+    // Builds a v2 envelope the way older builds did: no `kdf` field, given hasher
+    function legacyEnvelope(data, password, hasher) {
+      const salt = CryptoJS.lib.WordArray.random(16)
+      const iv = CryptoJS.lib.WordArray.random(16)
+      const key = CryptoJS.PBKDF2(password, salt, { keySize: 8, iterations: 100000, hasher })
+      const encrypted = CryptoJS.AES.encrypt(data, key, {
+        iv,
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7,
+      }).toString()
+      return JSON.stringify({
+        v: 2,
+        salt: salt.toString(CryptoJS.enc.Hex),
+        iv: iv.toString(CryptoJS.enc.Hex),
+        data: encrypted,
+      })
+    }
+
+    it('should write kdf=sha256 into new envelopes', () => {
+      expect(JSON.parse(encrypt('hello', password)).kdf).toBe('sha256')
+    })
+
+    it('should decrypt envelopes without kdf made with SHA256', () => {
+      const envelope = legacyEnvelope(JSON.stringify(testData), password, CryptoJS.algo.SHA256)
+      expect(JSON.parse(decrypt(envelope, password))).toEqual(testData)
+    })
+
+    it('should decrypt envelopes without kdf made with SHA1 (crypto-js < 4.2.0)', () => {
+      const envelope = legacyEnvelope(JSON.stringify(testData), password, CryptoJS.algo.SHA1)
+      expect(JSON.parse(decrypt(envelope, password))).toEqual(testData)
+    })
+
+    it('should not decrypt with a wrong password', () => {
+      const envelope = legacyEnvelope(JSON.stringify(testData), password, CryptoJS.algo.SHA1)
+      let result = ''
+      try { result = decrypt(envelope, 'wrong-password') } catch (_) { /* expected */ }
+      expect(() => JSON.parse(result)).toThrow()
+    })
+  })
 })

@@ -5,6 +5,9 @@ import { FileSystemDriver, type RepoItem } from '@/services/FileSystemDriver'
 // localStorage key kept as-is so existing users don't lose their saved repos
 const REPOS_STORAGE_KEY = 'aReposList'
 
+// Query params that describe a repo passed via link (?type=github&name=...)
+const URL_REPO_PARAMS = ['type', 'name', 'login', 'repo', 'key', 'url', 'username', 'password'] as const
+
 export const useReposStore = defineStore('repos', () => {
   // --- state ---
   const defaultRepos = ref<RepoItem[]>([
@@ -32,34 +35,34 @@ export const useReposStore = defineStore('repos', () => {
 
   /**
    * Load saved repos from localStorage. A repo can also be passed via URL
-   * query params (?type=...&name=...) — it is added or updated by name.
+   * query params (?type=...&name=...) — it is added or updated by name, and the
+   * params are removed from the address bar so secrets don't stay in history.
    */
   function loadRepos() {
     try {
       userRepos.value = JSON.parse(localStorage.getItem(REPOS_STORAGE_KEY) || '[]')
-      const { searchParams } = new URL(window.location.href)
-      if (searchParams.get('type')) {
-        const repoFromUrl = {
-          type: searchParams.get('type'),
-          name: searchParams.get('name'),
-          login: searchParams.get('login'),
-          repo: searchParams.get('repo'),
-          key: searchParams.get('key'),
-          url: searchParams.get('url'),
-          username: searchParams.get('username'),
-          password: searchParams.get('password'),
-        } as RepoItem
-        const existing = userRepos.value.find((repo) => repo.name == repoFromUrl.name)
-        if (existing) {
-          Object.assign(existing, repoFromUrl)
-        } else {
-          userRepos.value.push(repoFromUrl)
-        }
-        persist()
-      }
     } catch (_) {
-      /* ignore */
+      userRepos.value = []
     }
+
+    const url = new URL(window.location.href)
+    if (!url.searchParams.get('type')) return
+
+    const repoFromUrl = Object.fromEntries(
+      URL_REPO_PARAMS.map((param) => [param, url.searchParams.get(param)])
+    ) as unknown as RepoItem
+    const existing = userRepos.value.find((repo) => repo.name == repoFromUrl.name)
+    if (existing) {
+      Object.assign(existing, repoFromUrl)
+    } else {
+      userRepos.value.push(repoFromUrl)
+    }
+    persist()
+
+    for (const param of URL_REPO_PARAMS) {
+      url.searchParams.delete(param)
+    }
+    window.history.replaceState(window.history.state, '', url.toString())
   }
 
   function removeRepo(index: number) {

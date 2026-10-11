@@ -69,4 +69,14 @@ describe('Repos Store (Pinia)', () => {
     expect(parsed.length).toBe(1)
     expect(parsed[0].name).toBe('Persisted')
   })
+
+  it('should import a repo from URL params and remove them from the address bar', () => {
+    window.history.replaceState(null, '', '/?type=github&name=FromUrl&login=u&repo=r&key=ghp_secret&keep=1')
+
+    repos.loadRepos()
+
+    expect(repos.allRepos[1].name).toBe('FromUrl')
+    expect(repos.allRepos[1].key).toBe('ghp_secret')
+    expect(window.location.search).toBe('?keep=1')
+  })
 })

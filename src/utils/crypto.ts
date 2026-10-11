@@ -2,10 +2,13 @@
  * Crypto module with backward compatibility.
  *
  * OLD format (v1): 3DES encrypted string (raw ciphertext from CryptoJS.TripleDES)
- * NEW format (v2): JSON envelope { v: 2, data: <AES-encrypted-string>, salt: <hex>, iv: <hex> }
+ * NEW format (v2): JSON envelope { v: 2, kdf: 'sha256', data: <AES-encrypted-string>, salt: <hex>, iv: <hex> }
+ *
+ * `kdf` is the PBKDF2 hash. crypto-js changed its default from SHA1 to SHA256 in 4.2.0,
+ * so envelopes written without `kdf` may use either — both are tried on read.
  *
  * Reading: tries to parse as v2 JSON first, falls back to 3DES for old files.
- * Writing: always uses AES with PBKDF2 key derivation (v2 format).
+ * Writing: always uses AES with PBKDF2-SHA256 key derivation (v2 format).
  */
 import CryptoJS from 'crypto-js'
 import DES from 'crypto-js/tripledes.js'
@@ -15,8 +18,16 @@ const PBKDF2_KEY_SIZE = 256 / 32  // 256-bit key
 const SALT_SIZE = 128 / 8         // 128-bit salt
 const IV_SIZE = 128 / 8           // 128-bit IV
 
+export type KdfHash = 'sha256' | 'sha1'
+
+const KDF_HASHERS = {
+  sha256: CryptoJS.algo.SHA256,
+  sha1: CryptoJS.algo.SHA1,
+}
+
 export interface V2Envelope {
   v: 2
+  kdf?: KdfHash
   salt: string
   iv: string
   data: string
@@ -32,10 +43,11 @@ export interface PasswordOptions {
 /**
  * Derive a key from password using PBKDF2
  */
-export function deriveKey(password: string, salt: CryptoJS.lib.WordArray): CryptoJS.lib.WordArray {
+export function deriveKey(password: string, salt: CryptoJS.lib.WordArray, kdf: KdfHash = 'sha256'): CryptoJS.lib.WordArray {
   return CryptoJS.PBKDF2(password, salt, {
     keySize: PBKDF2_KEY_SIZE,
     iterations: PBKDF2_ITERATIONS,
+    hasher: KDF_HASHERS[kdf],
   })
 }
 
@@ -45,7 +57,7 @@ export function deriveKey(password: string, salt: CryptoJS.lib.WordArray): Crypt
 export function encryptV2(data: string, password: string): string {
   const salt = CryptoJS.lib.WordArray.random(SALT_SIZE)
   const iv = CryptoJS.lib.WordArray.random(IV_SIZE)
-  const key = deriveKey(password, salt)
+  const key = deriveKey(password, salt, 'sha256')
   const encrypted = CryptoJS.AES.encrypt(data, key, {
     iv,
     mode: CryptoJS.mode.CBC,
@@ -54,25 +66,40 @@ export function encryptV2(data: string, password: string): string {
 
   return JSON.stringify({
     v: 2,
+    kdf: 'sha256',
     salt: salt.toString(CryptoJS.enc.Hex),
     iv: iv.toString(CryptoJS.enc.Hex),
     data: encrypted,
   } satisfies V2Envelope)
 }
 
-/**
- * Decrypt v2 format (AES + PBKDF2)
- */
-export function decryptV2(envelope: V2Envelope, password: string): string {
+function decryptV2WithKdf(envelope: V2Envelope, password: string, kdf: KdfHash): string {
   const salt = CryptoJS.enc.Hex.parse(envelope.salt)
   const iv = CryptoJS.enc.Hex.parse(envelope.iv)
-  const key = deriveKey(password, salt)
+  const key = deriveKey(password, salt, kdf)
   const decrypted = CryptoJS.AES.decrypt(envelope.data, key, {
     iv,
     mode: CryptoJS.mode.CBC,
     padding: CryptoJS.pad.Pkcs7,
   })
   return decrypted.toString(CryptoJS.enc.Utf8)
+}
+
+/**
+ * Decrypt v2 format (AES + PBKDF2).
+ * Envelopes without `kdf` are tried with SHA256 first, then SHA1 (crypto-js < 4.2.0 default).
+ */
+export function decryptV2(envelope: V2Envelope, password: string): string {
+  if (envelope.kdf) {
+    return decryptV2WithKdf(envelope, password, envelope.kdf)
+  }
+  try {
+    const decrypted = decryptV2WithKdf(envelope, password, 'sha256')
+    if (decrypted) return decrypted
+  } catch (_) {
+    // Wrong key usually yields invalid UTF-8 — fall through to the legacy hasher
+  }
+  return decryptV2WithKdf(envelope, password, 'sha1')
 }
 
 /**

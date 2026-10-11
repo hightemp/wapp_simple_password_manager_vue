@@ -360,7 +360,12 @@ function connect() {
 const importInput = useTemplateRef<HTMLInputElement>('importInput')
 
 function exportRepos() {
-  downloadJson('database', JSON.stringify(repos.allRepos))
+  const confirmed = confirm(
+    'The exported file contains API keys and passwords of your repositories in plain text.\n\n' +
+    'Store it somewhere safe and delete it after use. Continue?'
+  )
+  if (!confirmed) return
+  downloadJson('repositories', JSON.stringify(repos.allRepos))
 }
 
 function importRepos() {

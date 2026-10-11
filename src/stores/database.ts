@@ -26,6 +26,36 @@ export interface Table {
 
 export type Database = Record<string, Table>
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+const FIELD_NAMES = ['category', 'name', 'login', 'password', 'url', 'description']
+
+function emptyFields(): Record<string, string> {
+  return Object.fromEntries(FIELD_NAMES.map((name) => [name, '']))
+}
+
+function createEmptyDatabase(): Database {
+  return {
+    table: {
+      last_index: 0,
+      page: 1,
+      data: [],
+      selection_id: null,
+      filter: emptyFields(),
+    },
+  }
+}
+
+function createEmptyForms(): Record<string, Record<string, any>> {
+  return { table: emptyFields() }
+}
+
+function createClosedEditWindows(): Record<string, { isOpen: boolean; item: Entry }> {
+  return { table: { isOpen: false, item: {} } }
+}
+
 export const useDatabaseStore = defineStore('database', () => {
   // --- state ---
   const masterPassword = ref('')
@@ -43,41 +73,12 @@ export const useDatabaseStore = defineStore('database', () => {
   })
 
   // Persisted (encrypted) database — field names are part of the file format
-  const database = ref<Database>({
-    table: {
-      last_index: 0,
-      page: 1,
-      data: [],
-      selection_id: null,
-      filter: {
-        category: '',
-        name: '',
-        login: '',
-        password: '',
-        url: '',
-        description: '',
-      },
-    },
-  })
+  const database = ref<Database>(createEmptyDatabase())
 
   // Values of the edit form fields per form
-  const forms = ref<Record<string, Record<string, any>>>({
-    table: {
-      category: '',
-      name: '',
-      login: '',
-      password: '',
-      url: '',
-      description: '',
-    },
-  })
+  const forms = ref<Record<string, Record<string, any>>>(createEmptyForms())
 
-  const editWindows = ref<Record<string, { isOpen: boolean; item: Entry }>>({
-    table: {
-      isOpen: false,
-      item: {},
-    },
-  })
+  const editWindows = ref<Record<string, { isOpen: boolean; item: Entry }>>(createClosedEditWindows())
 
   const unsavedChanges = ref(0)
 
@@ -151,36 +152,42 @@ export const useDatabaseStore = defineStore('database', () => {
     loadDatabase()
   }
 
-  function saveToAllRepos() {
+  /**
+   * Save the database to every repo marked `needsSave`.
+   * Rejects with an error listing the failed repos; unsaved changes are kept in that case.
+   */
+  async function saveToAllRepos(): Promise<void> {
     const repos = useReposStore()
-    const saves: Promise<void>[] = []
-    repos.allRepos.forEach((repo, index) => {
-      if (repo.needsSave) {
-        if (!repos.fileSystems[index]) {
-          repos.createFileSystem(index)
-        }
-        saves.push(saveDatabase(repos.fileSystems[index]))
+    const targets = repos.allRepos
+      .map((repo, index) => ({ repo, index }))
+      .filter(({ repo }) => repo.needsSave)
+
+    const results = await Promise.allSettled(targets.map(({ index }) => {
+      if (!repos.fileSystems[index]) {
+        repos.createFileSystem(index)
       }
-    })
-    return Promise.all(saves)
+      return saveDatabase(repos.fileSystems[index])
+    }))
+
+    const failures = results
+      .map((result, i) => ({ result, repo: targets[i].repo }))
+      .filter(({ result }) => result.status === 'rejected')
+      .map(({ result, repo }) => `${repo.name} (${errorMessage((result as PromiseRejectedResult).reason)})`)
+
+    if (failures.length > 0) {
+      throw new Error('Failed to save to: ' + failures.join(', '))
+    }
+    unsavedChanges.value = 0
   }
 
-  function saveDatabase(fileSystem: FileSystemDriver) {
-    return fileSystem
-      .writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
-      .then(() => {
-        unsavedChanges.value = 0
-      })
-      .catch(() => {
-        // Retry once after re-reading the file (refreshes cached SHA / file id)
-        fileSystem.readFile(DATABASE_PATH).then(() => {
-          return fileSystem
-            .writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
-            .then(() => {
-              unsavedChanges.value = 0
-            })
-        })
-      })
+  async function saveDatabase(fileSystem: FileSystemDriver): Promise<void> {
+    try {
+      await fileSystem.writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
+    } catch (_) {
+      // Retry once after re-reading the file (refreshes cached SHA / file id)
+      await fileSystem.readFile(DATABASE_PATH)
+      await fileSystem.writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
+    }
   }
 
   function showConnectionError(message: string) {
@@ -235,6 +242,31 @@ export const useDatabaseStore = defineStore('database', () => {
       })
   }
 
+  /**
+   * Lock the app: forget the master password and wipe all decrypted data from memory.
+   * Unsaved changes are saved first when possible; a failed save is reported to the caller
+   * but the app is locked anyway.
+   */
+  async function lock(): Promise<void> {
+    let saveError: unknown = null
+    if (unsavedChanges.value > 0 && masterPassword.value) {
+      try {
+        await saveToAllRepos()
+      } catch (error) {
+        saveError = error
+      }
+    }
+
+    masterPassword.value = ''
+    database.value = createEmptyDatabase()
+    forms.value = createEmptyForms()
+    editWindows.value = createClosedEditWindows()
+    unsavedChanges.value = 0
+    isRepoWindowOpen.value = true
+
+    if (saveError) throw saveError
+  }
+
   return {
     masterPassword,
     structure,
@@ -259,5 +291,6 @@ export const useDatabaseStore = defineStore('database', () => {
     saveToAllRepos,
     saveDatabase,
     loadDatabase,
+    lock,
   }
 })

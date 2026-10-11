@@ -79,14 +79,24 @@ async function changePassword() {
   if (error.value) return
 
   isSaving.value = true
+  // Re-encrypt and save to all repos with the new password.
+  // The new password stays active even if some saves fail: repos that did save
+  // already use it, and the next Save retries the failed ones.
+  db.masterPassword = newPassword.value
+  db.unsavedChanges++
   try {
-    // Re-encrypt and save to all repos with the new password
-    db.masterPassword = newPassword.value
     await db.saveToAllRepos()
     isOpen.value = false
     notify('Password Changed', 'Database re-encrypted with the new password', 'success')
   } catch (e) {
-    error.value = 'Failed to save: ' + e
+    isOpen.value = false
+    notify(
+      'Password changed, but not saved everywhere',
+      (e instanceof Error ? e.message : String(e)) +
+        '. These repositories still use the OLD password until you press Save again.',
+      'error',
+      15000,
+    )
   } finally {
     isSaving.value = false
   }
