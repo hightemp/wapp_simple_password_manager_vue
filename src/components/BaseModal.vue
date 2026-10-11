@@ -148,6 +148,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   max-height: 90vh;
+  max-height: 90dvh;
   overflow: hidden;
 }
 
@@ -231,8 +232,15 @@ onUnmounted(() => {
 @media (max-width: 640px) {
   .modal-panel {
     max-height: 95vh;
+    /* dvh excludes the mobile browser's address bar */
+    max-height: 95dvh;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     align-self: flex-end;
+  }
+  /* Keep the last row of the sheet above the iOS home indicator */
+  .modal-footer,
+  .modal-body:last-child {
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
   }
   .modal-overlay {
     padding: 0;

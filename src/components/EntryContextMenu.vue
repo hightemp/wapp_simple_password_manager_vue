@@ -3,8 +3,9 @@
     <Transition name="ctx">
       <div
         v-if="entry"
+        ref="menu"
         class="context-menu"
-        :style="{ top: y + 'px', left: x + 'px' }"
+        :style="{ top: position.top + 'px', left: position.left + 'px' }"
         @click="emit('close')"
       >
         <button class="ctx-item" @click="emit('copy', 'login')">
@@ -30,7 +31,9 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { ref, watch, nextTick, useTemplateRef } from 'vue'
+
+const props = defineProps<{
   // Menu is shown while an entry is set
   entry: Record<string, any> | null
   x: number
@@ -43,6 +46,25 @@ const emit = defineEmits<{
   (e: 'delete'): void
   (e: 'close'): void
 }>()
+
+// Gap kept between the menu and the viewport edges
+const EDGE_GAP = 8
+
+const menu = useTemplateRef<HTMLElement>('menu')
+const position = ref({ top: 0, left: 0 })
+
+// Open at the cursor, then shift the menu back inside the viewport once its size is known
+watch(() => [props.entry, props.x, props.y], async () => {
+  position.value = { top: props.y, left: props.x }
+  if (!props.entry) return
+  await nextTick()
+  const el = menu.value
+  if (!el) return
+  position.value = {
+    top: Math.max(EDGE_GAP, Math.min(props.y, window.innerHeight - el.offsetHeight - EDGE_GAP)),
+    left: Math.max(EDGE_GAP, Math.min(props.x, window.innerWidth - el.offsetWidth - EDGE_GAP)),
+  }
+}, { immediate: true })
 
 function openUrl(url: string) {
   window.open(url, '_blank', 'noopener')

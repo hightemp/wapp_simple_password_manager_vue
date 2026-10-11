@@ -69,3 +69,12 @@ code {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--c-text-muted);
 }
+
+/* iOS Safari zooms the page when a focused field's font is smaller than 16px */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
+}

@@ -27,6 +27,12 @@ export default defineConfig({
       use: { ...devices['Pixel 5'] },
       grep: /@mobile/,
     },
+    // Real Safari engine on the smallest supported screen (320px wide)
+    {
+      name: 'Mobile Safari',
+      use: { ...devices['iPhone SE'] },
+      grep: /@mobile/,
+    },
   ],
 
   webServer: {

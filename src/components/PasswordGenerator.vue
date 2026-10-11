@@ -6,7 +6,8 @@
       <div :class="isExpanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" />
     </button>
 
-    <Transition name="slide">
+    <!-- Scroll the opened panel into view: in a long form it opens below the fold -->
+    <Transition name="slide" @after-enter="(el) => (el as HTMLElement).scrollIntoView({ block: 'nearest', behavior: 'smooth' })">
       <div v-if="isExpanded" class="pw-gen-panel">
         <!-- Length slider -->
         <div class="pw-gen-row">

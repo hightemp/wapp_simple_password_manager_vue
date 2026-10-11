@@ -10,8 +10,8 @@
       <div class="i-lucide-save" />
       <span v-if="unsavedChanges" class="sidebar-badge" />
     </button>
-    <button class="bottom-nav-btn" @click="emit('action', 'toggle-theme')" :aria-label="isDarkTheme ? 'Light theme' : 'Dark theme'">
-      <div :class="isDarkTheme ? 'i-lucide-sun' : 'i-lucide-moon'" />
+    <button class="bottom-nav-btn" @click="emit('action', 'more')" aria-label="More">
+      <div class="i-lucide-menu" />
     </button>
   </nav>
 </template>
@@ -21,7 +21,6 @@ import type { MenuAction } from '@/types/menu'
 
 defineProps<{
   unsavedChanges: number
-  isDarkTheme: boolean
 }>()
 
 const emit = defineEmits<{ (e: 'action', action: MenuAction): void }>()
@@ -35,7 +34,8 @@ const emit = defineEmits<{ (e: 'action', action: MenuAction): void }>()
   bottom: 0;
   left: 0;
   right: 0;
-  height: 56px;
+  /* 56px of buttons plus the iOS home indicator area */
+  height: calc(56px + env(safe-area-inset-bottom));
   background: var(--c-bg-elevated);
   border-top: 1px solid var(--c-border);
   padding-bottom: env(safe-area-inset-bottom);

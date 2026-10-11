@@ -67,7 +67,17 @@ defineExpose({ show })
   gap: var(--space-2);
   pointer-events: none;
   max-width: 360px;
-  width: 100%;
+  width: calc(100% - 2 * var(--space-4));
+}
+
+@media (max-width: 768px) {
+  .notification-stack {
+    top: calc(var(--space-2) + env(safe-area-inset-top));
+    right: var(--space-2);
+    left: var(--space-2);
+    width: auto;
+    max-width: none;
+  }
 }
 
 .notification {

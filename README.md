@@ -94,7 +94,16 @@ Click **Connect** to unlock the database. Then:
 - **Delete** — select a row + Delete (with confirmation)
 - **Save** — persist changes to the repository
 - **Filter** — type in any column header to filter entries
-- **Copy** — click the copy icon on login/password cells
+- **Copy** — click the copy icon on login/password cells (the clipboard is cleared after 30 s)
+
+### On a phone
+
+Below 768 px the app switches to a mobile layout:
+
+- **Search** — one field at the top searches all fields
+- **Entries** — a scrolling list of cards; the buttons on a card copy the login / password
+- **Details** — tap a card to see all fields, reveal or copy the password, open the URL, **Edit** or **Delete**
+- **Bottom bar** — Repository · Add · Save · **More** (export, import, change master password, theme, lock)
 
 ## Security
 
@@ -161,16 +170,22 @@ src/
 │   ├── BottomNav.vue          # Mobile bottom navigation
 │   ├── BaseModal.vue          # Reusable modal with focus trap
 │   ├── ChangePasswordModal.vue    # Change master password
+│   ├── ConfirmDialog.vue      # Confirmation dialog (replaces confirm())
+│   ├── EntryCardList.vue      # Mobile: list of entry cards
 │   ├── EntryContextMenu.vue   # Right-click menu for table rows
+│   ├── EntryDetailsSheet.vue  # Mobile: entry details / edit / delete
 │   ├── EntryEditModal.vue     # Entry editor
 │   ├── EntryFormFields.vue    # Dynamic form renderer
 │   ├── FormField.vue          # Individual form field
 │   ├── KeyboardShortcutsModal.vue # Shortcuts help
 │   ├── LoaderOverlay.vue      # Loading overlay
+│   ├── MobileMenuSheet.vue    # Mobile: "More" menu
 │   ├── NotificationToast.vue  # Toast notification system
 │   ├── PasswordGenerator.vue  # Password generator panel
 │   └── RepoSettingsModal.vue  # Repository settings (split-view)
 ├── composables/
+│   ├── useConfirm.ts          # Confirmation dialog via provide/inject
+│   ├── useMediaQuery.ts       # Reactive media query (mobile layout switch)
 │   └── useNotify.ts           # Toast notifications via provide/inject
 ├── services/
 │   ├── FileSystemDriver.ts    # GitHub/WebDAV/LocalStorage/Google Drive adapters
@@ -181,12 +196,14 @@ src/
 ├── types/
 │   └── menu.ts                # Sidebar / bottom nav actions
 ├── utils/
-│   ├── crypto.ts              # AES encryption + PBKDF2 (with legacy 3DES reading)
+│   ├── clipboard.ts           # Copy secrets, auto-clear the clipboard
+│   ├── crypto.ts              # AES-256-GCM encryption (reads legacy v1/v2 formats)
 │   ├── debounce.ts
 │   └── download.ts            # Save JSON as a file
 ├── styles/
 │   ├── tokens.css             # Design tokens (colors, spacing, etc.)
 │   ├── base.css               # Global reset + typography
+│   ├── components.css         # Shared buttons, form fields, animations
 │   └── main.css               # Style entry point
 └── __tests__/                 # Unit tests (mirror src/ layout)
 ```

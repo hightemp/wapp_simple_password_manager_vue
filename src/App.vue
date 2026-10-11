@@ -12,6 +12,32 @@
 
     <!-- ===== Main Content ===== -->
     <main class="main-content" id="main-table">
+      <!-- ===== Mobile: search + card list ===== -->
+      <template v-if="isMobile">
+        <div class="mobile-search">
+          <div class="i-lucide-search mobile-search-icon" />
+          <input
+            v-model="searchQuery"
+            type="search"
+            class="mobile-search-input"
+            placeholder="Search"
+            aria-label="Search entries"
+            autocomplete="off"
+          />
+        </div>
+        <div class="mobile-list-scroll">
+          <EntryCardList
+            :entries="filteredRows"
+            :copied-cells="copiedCells"
+            :is-searching="searchQuery.trim() !== ''"
+            @open="(entry) => (detailsEntry = entry)"
+            @copy="copyField"
+          />
+        </div>
+      </template>
+
+      <!-- ===== Desktop: paginated table ===== -->
+      <template v-else>
       <!-- Pagination bar -->
       <div class="pagination-bar" v-if="pageCount > 1">
         <button class="pg-btn" @click="goToFirstPage" :disabled="page <= 1" aria-label="First page">
@@ -123,12 +149,7 @@
         </div>
       </div>
 
-      <!-- Bottom pagination for mobile -->
-      <div class="pagination-bar pagination-bottom" v-if="pageCount > 1">
-        <button class="pg-btn" @click="goToPrevPage" :disabled="page <= 1"><div class="i-lucide-chevron-left" /></button>
-        <span class="pg-info">{{ page }} / {{ pageCount }}</span>
-        <button class="pg-btn" @click="goToNextPage" :disabled="page >= pageCount"><div class="i-lucide-chevron-right" /></button>
-      </div>
+      </template>
     </main>
 
     <EntryContextMenu
@@ -146,8 +167,15 @@
 
     <BottomNav
       :unsaved-changes="db.unsavedChanges"
-      :is-dark-theme="isDarkTheme"
       @action="onMenuAction"
+    />
+    <MobileMenuSheet v-model="showMobileMenu" :is-dark-theme="isDarkTheme" @action="onMenuAction" />
+    <EntryDetailsSheet
+      :entry="detailsEntry"
+      @copy="(field) => copyField(detailsEntry, field)"
+      @edit="editFromDetails"
+      @delete="deleteFromDetails"
+      @close="detailsEntry = null"
     />
   </div>
 
@@ -168,11 +196,15 @@ import { useReposStore } from '@/stores/repos'
 import { debounce } from '@/utils/debounce'
 import { copySecret, CLIPBOARD_CLEAR_DELAY } from '@/utils/clipboard'
 import { NOTIFY_KEY, type NotifyFn } from '@/composables/useNotify'
+import { useMediaQuery, MOBILE_QUERY } from '@/composables/useMediaQuery'
 import { CONFIRM_KEY, type ConfirmFn } from '@/composables/useConfirm'
 import type { MenuAction } from '@/types/menu'
 
 import AppSidebar from '@/components/AppSidebar.vue'
 import BottomNav from '@/components/BottomNav.vue'
+import MobileMenuSheet from '@/components/MobileMenuSheet.vue'
+import EntryCardList from '@/components/EntryCardList.vue'
+import EntryDetailsSheet from '@/components/EntryDetailsSheet.vue'
 import EntryEditModal from '@/components/EntryEditModal.vue'
 import EntryContextMenu from '@/components/EntryContextMenu.vue'
 import RepoSettingsModal from '@/components/RepoSettingsModal.vue'
@@ -219,6 +251,13 @@ const isDarkTheme = ref(localStorage.getItem(THEME_STORAGE_KEY) === 'true')
 const justSaved = ref(false)
 const showShortcuts = ref(false)
 const showChangePassword = ref(false)
+const showMobileMenu = ref(false)
+
+// Mobile layout: card list with a single search field instead of the table
+const isMobile = useMediaQuery(MOBILE_QUERY)
+const searchQuery = ref('')
+// Entry shown in the mobile details sheet
+const detailsEntry = ref<Entry | null>(null)
 let autoLockTimer: ReturnType<typeof setTimeout> | null = null
 
 // Sorting
@@ -248,11 +287,22 @@ const page = computed({
   set: (value) => { table.value.page = Number(value) },
 })
 
+function matchesSearch(entry: Entry, query: string): boolean {
+  return Object.keys(db.columns).some((key) => String(entry[key] ?? '').toLowerCase().includes(query))
+}
+
 const filteredRows = computed(() => {
-  const filter = table.value.filter
-  let rows = table.value.data.filter((entry: Record<string, string>) =>
-    Object.keys(filter).every((key) => !filter[key] || String(entry[key] ?? '').includes(filter[key]))
-  )
+  let rows: Entry[]
+  if (isMobile.value) {
+    // Column filters are not visible on mobile — use the search field only
+    const query = searchQuery.value.trim().toLowerCase()
+    rows = query ? table.value.data.filter((entry) => matchesSearch(entry, query)) : table.value.data
+  } else {
+    const filter = table.value.filter
+    rows = table.value.data.filter((entry) =>
+      Object.keys(filter).every((key) => !filter[key] || String(entry[key] ?? '').includes(filter[key]))
+    )
+  }
 
   if (sortKey.value) {
     const key = sortKey.value
@@ -398,17 +448,29 @@ function editSelected() {
   }
 }
 
-async function deleteEntry(entry: any) {
-  if (!entry) return
+/** Ask, then delete; resolves to true when the entry was deleted */
+async function deleteEntry(entry: any): Promise<boolean> {
+  if (!entry) return false
   const confirmed = await confirmAction({
     title: 'Delete entry',
     message: entry.name ? `Delete "${entry.name}"?` : 'Delete this entry?',
     confirmText: 'Delete',
     danger: true,
   })
-  if (!confirmed) return
+  if (!confirmed) return false
   db.removeEntry(entry)
   if (selectedEntry.value?.id === entry.id) selectedEntry.value = null
+  return true
+}
+
+function editFromDetails() {
+  const entry = detailsEntry.value
+  detailsEntry.value = null
+  if (entry) db.openEditWindow(entry)
+}
+
+async function deleteFromDetails() {
+  if (await deleteEntry(detailsEntry.value)) detailsEntry.value = null
 }
 
 function deleteSelected() {
@@ -488,6 +550,8 @@ function onMenuAction(action: MenuAction) {
     case 'import': importInput.value?.click(); break
     case 'shortcuts': showShortcuts.value = true; break
     case 'toggle-theme': toggleTheme(); break
+    case 'more': showMobileMenu.value = true; break
+    case 'lock': lockApp(); break
   }
 }
 
@@ -503,6 +567,9 @@ async function lockApp() {
   revealedRows.clear()
   closeContextMenu()
   showChangePassword.value = false
+  showMobileMenu.value = false
+  detailsEntry.value = null
+  searchQuery.value = ''
   try {
     await db.lock()
   } catch (error) {
@@ -575,13 +642,17 @@ function onKeydown(event: KeyboardEvent) {
 onMounted(() => {
   repos.loadRepos()
 
-  if (tableScroll.value) {
-    tableHeight.value = tableScroll.value.clientHeight
-    tableResizeObserver = new ResizeObserver(([entry]) => {
-      tableHeight.value = entry.contentRect.height
-    })
-    tableResizeObserver.observe(tableScroll.value)
-  }
+  tableResizeObserver = new ResizeObserver(([entry]) => {
+    tableHeight.value = entry.contentRect.height
+  })
+  // The table element is recreated when switching between mobile and desktop layouts
+  watch(tableScroll, (element, previous) => {
+    if (previous) tableResizeObserver?.unobserve(previous)
+    if (element) {
+      tableHeight.value = element.clientHeight
+      tableResizeObserver?.observe(element)
+    }
+  }, { immediate: true })
 
   if (isDarkTheme.value) {
     document.documentElement.setAttribute('data-theme', 'dark')
@@ -649,11 +720,6 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--c-border);
   background: var(--c-bg-elevated);
   flex-shrink: 0;
-}
-.pagination-bottom {
-  border-top: 1px solid var(--c-border);
-  border-bottom: none;
-  display: none;
 }
 
 .pg-btn {
@@ -943,19 +1009,50 @@ onUnmounted(() => {
   clip: rect(0, 0, 0, 0);
   border: 0;
 }
+/* ===== Mobile: search + card list ===== */
+.mobile-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--c-bg-elevated);
+  border-bottom: 1px solid var(--c-border);
+  flex-shrink: 0;
+}
+
+.mobile-search-icon {
+  position: absolute;
+  left: calc(var(--space-3) + 12px);
+  font-size: 18px;
+  color: var(--c-text-muted);
+  pointer-events: none;
+}
+
+.mobile-search-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 var(--space-3) 0 40px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: var(--c-surface);
+  color: var(--c-text);
+  outline: none;
+}
+.mobile-search-input:focus {
+  border-color: var(--c-accent);
+}
+
+.mobile-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
   .app-shell {
-    padding-bottom: 56px;
-  }
-  .pagination-bar:first-child {
-    display: none;
-  }
-  .pagination-bottom {
-    display: flex;
-  }
-  .cell-action-btn {
-    opacity: 1;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: calc(56px + env(safe-area-inset-bottom));
   }
 }
 </style>

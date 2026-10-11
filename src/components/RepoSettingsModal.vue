@@ -725,6 +725,21 @@ async function clearStorage() {
   .repo-card-actions {
     opacity: 1;
   }
+  /* Connect gets its own full-width row above the secondary actions */
+  .modal-footer-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+  .modal-footer-row > .action-btn--primary {
+    order: -1;
+    justify-content: center;
+    min-height: 44px;
+  }
+  .footer-left {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
 }
 
 .gdrive-hint {

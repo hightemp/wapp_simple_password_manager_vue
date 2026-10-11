@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Locator } from '@playwright/test'
 import fs from 'node:fs'
 
 // Helper: connect to LocalStorage repo with a master password
@@ -532,65 +532,165 @@ test.describe('Import & Export', () => {
   })
 })
 
-test.describe('Mobile Viewport', { tag: '@mobile' }, () => {
+test.describe('Mobile', { tag: '@mobile' }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await connectLocalStorage(page)
   })
 
-  async function addEntryViaBottomNav(page: Page, name: string) {
+  async function addEntry(page: Page, entry: { name: string; login?: string; password?: string; url?: string }) {
     await page.locator('.bottom-nav [aria-label="Add"]').click()
     await expect(page.locator('.modal-panel')).toBeVisible()
-    await page.locator('.modal-panel .form-field-input').nth(1).fill(name)
+    const inputs = page.locator('.modal-panel .form-field-input')
+    await inputs.nth(1).fill(entry.name)
+    if (entry.login) await inputs.nth(2).fill(entry.login)
+    if (entry.password) await inputs.nth(3).fill(entry.password)
+    if (entry.url) await inputs.nth(4).fill(entry.url)
     await page.locator('.modal-panel button:has-text("Save")').click()
     await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
   }
 
-  test('should show bottom nav and hide sidebar on mobile', async ({ page }) => {
+  async function expectNoHorizontalScroll(page: Page) {
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+    expect(overflow).toBeLessThanOrEqual(0)
+  }
+
+  async function expectTouchTarget(locator: Locator) {
+    const box = await locator.boundingBox()
+    expect(box, 'element should be visible').not.toBeNull()
+    expect(box!.width).toBeGreaterThanOrEqual(44)
+    expect(box!.height).toBeGreaterThanOrEqual(44)
+  }
+
+  test('should show the card list and bottom nav instead of the table', async ({ page }) => {
     await expect(page.locator('.sidebar')).not.toBeVisible()
+    await expect(page.locator('.data-grid')).toHaveCount(0)
+    await expect(page.locator('.mobile-search-input')).toBeVisible()
 
     const bottomNav = page.locator('.bottom-nav')
-    await expect(bottomNav).toBeVisible()
-    await expect(bottomNav.locator('[aria-label="Add"]')).toBeVisible()
-    await expect(bottomNav.locator('[aria-label="Save"]')).toBeVisible()
-    await expect(bottomNav.locator('[aria-label="Repository"]')).toBeVisible()
+    for (const label of ['Repository', 'Add', 'Save', 'More']) {
+      await expectTouchTarget(bottomNav.locator(`[aria-label="${label}"]`))
+    }
+    await expectNoHorizontalScroll(page)
   })
 
-  test('should add an entry via bottom nav', async ({ page }) => {
-    await addEntryViaBottomNav(page, 'Mobile Test')
-    await expect(page.locator('.grid-row:has-text("Mobile Test")')).toBeVisible()
+  test('should fit the repository dialog on screen', async ({ page }) => {
+    await page.locator('.bottom-nav [aria-label="Repository"]').click()
+    const connect = page.locator('.modal-panel button:has-text("Connect")')
+    await expect(connect).toBeInViewport({ ratio: 1 })
+    await expectNoHorizontalScroll(page)
   })
 
-  test('should edit an entry with a double tap', async ({ page }) => {
-    await addEntryViaBottomNav(page, 'Before Edit')
-    await page.locator('.grid-row:has-text("Before Edit")').dblclick()
-    await expect(page.locator('.modal-panel')).toBeVisible()
+  test('should not zoom on input focus (font-size >= 16px)', async ({ page }) => {
+    const searchFont = await page.locator('.mobile-search-input').evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
+    expect(searchFont).toBeGreaterThanOrEqual(16)
+
+    await page.locator('.bottom-nav [aria-label="Add"]').click()
+    const fieldFont = await page.locator('.modal-panel .form-field-input').first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
+    expect(fieldFont).toBeGreaterThanOrEqual(16)
+  })
+
+  test('should add entries and search them', async ({ page }) => {
+    await addEntry(page, { name: 'Gmail', login: 'me@gmail.com' })
+    await addEntry(page, { name: 'GitHub', login: 'octocat' })
+
+    const cards = page.locator('.entry-card')
+    await expect(cards).toHaveCount(2)
+    await expectTouchTarget(cards.first().locator('[aria-label="Copy login"]'))
+
+    // Search matches any field, case-insensitive
+    await page.locator('.mobile-search-input').fill('OCTO')
+    await expect(cards).toHaveCount(1)
+    await expect(cards.first()).toContainText('GitHub')
+
+    await page.locator('.mobile-search-input').fill('nothing-like-this')
+    await expect(cards).toHaveCount(0)
+    await expect(page.locator('text=Nothing found')).toBeVisible()
+  })
+
+  test('should open details, reveal and copy the password', async ({ page }) => {
+    await addEntry(page, { name: 'Bank', login: 'client42', password: 's3cret!', url: 'https://bank.example' })
+    await page.locator('.entry-card:has-text("Bank")').click()
+
+    const sheet = page.locator('.modal-panel')
+    await expect(sheet).toContainText('client42')
+    await expect(sheet).not.toContainText('s3cret!')
+    await sheet.locator('[aria-label="Show password"]').click()
+    await expect(sheet).toContainText('s3cret!')
+
+    await expectTouchTarget(sheet.locator('[aria-label="Copy password"]'))
+    await sheet.locator('[aria-label="Copy password"]').click()
+    // WebKit may refuse clipboard access in headless mode — either toast proves the button works
+    await expect(page.locator('.notification:has-text("Cop")')).toBeVisible()
+    await expectNoHorizontalScroll(page)
+  })
+
+  test('should edit an entry from the details sheet', async ({ page }) => {
+    await addEntry(page, { name: 'Before Edit' })
+    await page.locator('.entry-card:has-text("Before Edit")').click()
+    await page.locator('.modal-panel button:has-text("Edit")').click()
+
     await page.locator('.modal-panel .form-field-input').nth(1).fill('After Edit')
     await page.locator('.modal-panel button:has-text("Save")').click()
-    await expect(page.locator('.grid-row:has-text("After Edit")')).toBeVisible()
+    await expect(page.locator('.entry-card:has-text("After Edit")')).toBeVisible()
+    await expect(page.locator('.entry-card:has-text("Before Edit")')).toHaveCount(0)
   })
 
-  test('should delete an entry via the context menu', async ({ page }) => {
-    await addEntryViaBottomNav(page, 'Mobile Delete')
-    // Long press fires `contextmenu` on mobile browsers
-    await page.locator('.grid-row:has-text("Mobile Delete")').click({ button: 'right' })
-    await page.locator('.context-menu button:has-text("Delete")').click()
+  test('should delete an entry from the details sheet', async ({ page }) => {
+    await addEntry(page, { name: 'Mobile Delete' })
+    await page.locator('.entry-card:has-text("Mobile Delete")').click()
     await page.locator('.modal-panel button:has-text("Delete")').click()
-    await expect(page.locator('.grid-row:has-text("Mobile Delete")')).toHaveCount(0)
+    // Confirm dialog stacks on top of the details sheet
+    await page.locator('.modal-panel:has-text("Delete entry") button:has-text("Delete")').click()
+
+    await expect(page.locator('.entry-card:has-text("Mobile Delete")')).toHaveCount(0)
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
   })
 
-  test('should save via bottom nav and reopen repository settings', async ({ page }) => {
-    await addEntryViaBottomNav(page, 'Mobile Save')
+  test('should save via bottom nav', async ({ page }) => {
+    await addEntry(page, { name: 'Mobile Save' })
     await page.locator('.bottom-nav [aria-label="Save"]').click()
     await expect(page.locator('.notification:has-text("Saved")')).toBeVisible()
-
-    await page.locator('.bottom-nav [aria-label="Repository"]').click()
-    await expect(page.locator('.modal-panel:has-text("Repository Settings")')).toBeVisible()
   })
 
-  test('should toggle the theme via bottom nav', async ({ page }) => {
-    await page.locator('.bottom-nav [aria-label="Dark theme"]').click()
+  test('should export and import the database from the More menu', async ({ page }) => {
+    await addEntry(page, { name: 'Exported', login: 'exp-user' })
+
+    await page.locator('.bottom-nav [aria-label="More"]').click()
+    const downloadPromise = page.waitForEvent('download')
+    await page.locator('.menu-item:has-text("Export database")').click()
+    const download = await downloadPromise
+    const filePath = await download.path()
+
+    // Delete the entry, then restore it from the exported file
+    await page.locator('.entry-card:has-text("Exported")').click()
+    await page.locator('.modal-panel button:has-text("Delete")').click()
+    await page.locator('.modal-panel:has-text("Delete entry") button:has-text("Delete")').click()
+    await expect(page.locator('.entry-card')).toHaveCount(0)
+
+    await page.locator('input[type="file"]').setInputFiles(filePath!)
+    await expect(page.locator('.entry-card:has-text("Exported")')).toBeVisible()
+  })
+
+  test('should open change password and toggle theme from the More menu', async ({ page }) => {
+    await page.locator('.bottom-nav [aria-label="More"]').click()
+    await page.locator('.menu-item:has-text("Change master password")').click()
+    await expect(page.locator('.modal-title', { hasText: /^Change Master Password$/ })).toBeVisible()
+    await expectNoHorizontalScroll(page)
+    await page.locator('.modal-panel button:has-text("Cancel")').click()
+
+    await page.locator('.bottom-nav [aria-label="More"]').click()
+    await page.locator('.menu-item:has-text("Dark theme")').click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  })
+
+  test('should lock from the More menu', async ({ page }) => {
+    await addEntry(page, { name: 'Secret Entry' })
+    await page.locator('.bottom-nav [aria-label="More"]').click()
+    await page.locator('.menu-item:has-text("Lock")').click()
+
+    await expect(page.locator('.modal-panel:has-text("Repository Settings")')).toBeVisible()
+    await expect(page.locator('.entry-card')).toHaveCount(0)
   })
 })
 
