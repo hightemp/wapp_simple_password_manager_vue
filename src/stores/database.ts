@@ -42,7 +42,7 @@ export const COLUMNS: Record<string, Column> = {
   category: { label: 'Category', type: 'category', inTable: false },
   name: { label: 'Name', type: 'text', inTable: true },
   login: { label: 'Login', type: 'text', inTable: true },
-  password: { label: 'Password', type: 'text', inTable: true },
+  password: { label: 'Password', type: 'password', inTable: true },
   url: { label: 'URL', type: 'text', inTable: true },
   description: { label: 'Description', type: 'textarea', inTable: true },
 }

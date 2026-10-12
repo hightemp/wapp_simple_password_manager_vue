@@ -3,14 +3,20 @@
     <label class="form-field-label">{{ field.label }}</label>
 
     <!-- textarea -->
-    <textarea
-      v-if="field.type === 'textarea'"
-      class="form-field-input form-field-textarea"
-      rows="4"
-      :placeholder="field.placeholder"
-      v-model="model"
-      autocomplete="off"
-    />
+    <div v-if="field.type === 'textarea'" class="form-field-control form-field-control--textarea">
+      <textarea
+        class="form-field-input form-field-textarea"
+        rows="4"
+        :placeholder="field.placeholder"
+        v-model="model"
+        autocomplete="off"
+      />
+      <div class="form-field-actions">
+        <button type="button" class="form-field-btn" :disabled="!model" :aria-label="`Copy ${field.label}`" :title="`Copy ${field.label}`" @click="copy">
+          <div :class="isCopied ? 'i-lucide-check' : 'i-lucide-copy'" />
+        </button>
+      </div>
+    </div>
 
     <!-- select -->
     <select
@@ -55,19 +61,37 @@
     <CategoryInput v-else-if="field.type === 'category'" v-model="model" />
 
     <!-- all other input types (text, email, password, number, url, tel, date, time, etc.) -->
-    <input
-      v-else
-      :type="field.type"
-      class="form-field-input"
-      :placeholder="field.placeholder"
-      v-model="model"
-      autocomplete="off"
-    />
+    <div v-else :class="['form-field-control', { 'form-field-control--secret': isSecret }]">
+      <input
+        :type="isSecret && !isRevealed ? 'password' : (isSecret ? 'text' : field.type)"
+        class="form-field-input"
+        :placeholder="field.placeholder"
+        v-model="model"
+        autocomplete="off"
+      />
+      <div class="form-field-actions">
+        <button
+          v-if="isSecret"
+          type="button"
+          class="form-field-btn"
+          :aria-label="isRevealed ? `Hide ${field.label}` : `Show ${field.label}`"
+          :title="isRevealed ? 'Hide' : 'Show'"
+          @click="isRevealed = !isRevealed"
+        >
+          <div :class="isRevealed ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
+        </button>
+        <button type="button" class="form-field-btn" :disabled="!model" :aria-label="`Copy ${field.label}`" :title="`Copy ${field.label}`" @click="copy">
+          <div :class="isCopied ? 'i-lucide-check' : 'i-lucide-copy'" />
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { copySecret, CLIPBOARD_CLEAR_DELAY } from '@/utils/clipboard'
+import { useNotify } from '@/composables/useNotify'
 import CategoryInput from './CategoryInput.vue'
 
 const props = defineProps<{
@@ -80,11 +104,87 @@ const model = computed({
   get: () => props.modelValue as any,
   set: (value) => emit('update:modelValue', value),
 })
+
+const notify = useNotify()
+
+// Password fields are masked until the user asks to see them
+const isSecret = computed(() => props.field.type === 'password')
+const isRevealed = ref(false)
+
+const isCopied = ref(false)
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
+
+async function copy() {
+  const text = String(model.value ?? '')
+  if (!text) return
+  try {
+    await copySecret(text)
+  } catch (_) {
+    notify('Copy failed', 'The browser blocked clipboard access', 'error')
+    return
+  }
+  isCopied.value = true
+  clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => { isCopied.value = false }, 1500)
+  notify('Copied', `Clipboard will be cleared in ${CLIPBOARD_CLEAR_DELAY / 1000} s`, 'success', 2000)
+}
+
+onBeforeUnmount(() => clearTimeout(copiedTimer))
 </script>
 
 <style scoped>
 .form-field {
   margin-bottom: var(--space-4);
+}
+
+.form-field-control {
+  position: relative;
+}
+
+.form-field-control .form-field-input {
+  padding-right: 40px;
+}
+
+.form-field-control--secret .form-field-input {
+  padding-right: 72px;
+  font-family: var(--font-mono);
+}
+
+.form-field-actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+}
+
+.form-field-control--textarea .form-field-actions {
+  top: 4px;
+  transform: none;
+}
+
+.form-field-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--c-text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+}
+
+.form-field-btn:hover:not(:disabled) {
+  color: var(--c-text);
+  background: var(--c-bg-hover);
+}
+
+.form-field-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .form-field-textarea {

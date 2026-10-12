@@ -300,6 +300,27 @@ test.describe('Password Masking', () => {
     await row.locator('[aria-label="Show password"]').click()
     await expectButtonsInsideCells()
   })
+
+  test('should mask the password in the edit form until shown', async ({ page }) => {
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    const password = page.locator('.modal-panel .form-field-input').nth(3)
+    await password.fill('secret-1')
+    await expect(password).toHaveAttribute('type', 'password')
+
+    await page.locator('.modal-panel [aria-label="Show Password"]').click()
+    await expect(password).toHaveAttribute('type', 'text')
+    await expect(password).toHaveValue('secret-1')
+
+    await page.locator('.modal-panel [aria-label="Hide Password"]').click()
+    await expect(password).toHaveAttribute('type', 'password')
+
+    // Reopening the form starts masked again
+    await page.locator('.modal-panel [aria-label="Show Password"]').click()
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+    await page.locator('.grid-row:not(.grid-header)').first().dblclick()
+    await expect(page.locator('.modal-panel .form-field-input').nth(3)).toHaveAttribute('type', 'password')
+  })
 })
 
 test.describe('Theme Toggle', () => {
@@ -376,6 +397,34 @@ test.describe('Clipboard Copy', () => {
     // Check clipboard
     const clipboardText = await page.evaluate(() => navigator.clipboard.readText())
     expect(clipboardText).toBe('mylogin')
+  })
+
+  test('should copy fields from the edit form', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.goto('/')
+    await connectLocalStorage(page)
+
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    const inputs = page.locator('.modal-panel .form-field-input')
+    await inputs.nth(2).fill('form-login')
+    await inputs.nth(3).fill('form-secret')
+    await inputs.nth(5).fill('some notes')
+
+    const readClipboard = () => page.evaluate(() => navigator.clipboard.readText())
+
+    // Empty fields have nothing to copy
+    await expect(page.locator('.modal-panel [aria-label="Copy URL"]')).toBeDisabled()
+
+    await page.locator('.modal-panel [aria-label="Copy Password"]').click()
+    expect(await readClipboard()).toBe('form-secret')
+    // Copying does not reveal the password
+    await expect(inputs.nth(3)).toHaveAttribute('type', 'password')
+
+    await page.locator('.modal-panel [aria-label="Copy Login"]').click()
+    expect(await readClipboard()).toBe('form-login')
+
+    await page.locator('.modal-panel [aria-label="Copy Description"]').click()
+    expect(await readClipboard()).toBe('some notes')
   })
 })
 
