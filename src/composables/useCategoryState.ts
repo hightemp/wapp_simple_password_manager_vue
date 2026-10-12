@@ -52,6 +52,8 @@ const extra = ref<string[]>(initial.selected === null ? [] : initial.extra)
 const expanded = ref(new Set(initial.expanded))
 const width = ref(initial.width)
 const collapsed = ref(initial.collapsed)
+// The trash is shown instead of a category (not remembered across reloads)
+const trashSelected = ref(false)
 
 watch([selected, extra, expanded, width, collapsed], () => {
   try {
@@ -91,11 +93,16 @@ export function useCategoryState() {
   function selectOnly(path: CategorySelection) {
     selected.value = path
     extra.value = []
+    trashSelected.value = false
+  }
+
+  function selectTrash() {
+    trashSelected.value = true
   }
 
   /** Ctrl/⌘+click: add or remove a category; "All" cannot be combined with others */
   function toggleSelection(path: string) {
-    if (selected.value === null) return selectOnly(path)
+    if (selected.value === null || trashSelected.value) return selectOnly(path)
     if (selected.value === path) {
       // Removing the primary one promotes the next selected category
       const [next, ...rest] = extra.value
@@ -111,6 +118,7 @@ export function useCategoryState() {
 
   /** Shift+click: select `paths` (a visible range), keeping the primary category as the anchor */
   function selectRange(paths: string[]) {
+    trashSelected.value = false
     if (selected.value === null || !paths.includes(selected.value)) {
       selected.value = paths[0] ?? null
     }
@@ -162,8 +170,8 @@ export function useCategoryState() {
   }
 
   return {
-    selected, extra, selectedSet, expanded, width, collapsed,
-    selectOnly, toggleSelection, selectRange,
+    selected, extra, selectedSet, expanded, width, collapsed, trashSelected,
+    selectOnly, selectTrash, toggleSelection, selectRange,
     toggleExpanded, reveal, followRename, followDelete, effectiveSelection, effectiveSelections,
   }
 }

@@ -1,10 +1,11 @@
 <template>
   <div class="card-list">
     <div v-if="entries.length === 0" class="card-list-empty">
-      <div class="i-lucide-database card-list-empty-icon" />
-      <p class="card-list-empty-title">{{ isSearching ? 'Nothing found' : 'No entries' }}</p>
+      <div :class="inTrash ? 'i-lucide-trash-2' : 'i-lucide-database'" class="card-list-empty-icon" />
+      <p class="card-list-empty-title">{{ isSearching ? 'Nothing found' : inTrash ? 'Trash is empty' : 'No entries' }}</p>
       <p class="card-list-empty-sub">
         <template v-if="isSearching">Try a different search</template>
+        <template v-else-if="inTrash">Deleted entries appear here</template>
         <template v-else>Tap <strong>+</strong> to create your first entry</template>
       </p>
     </div>
@@ -56,6 +57,7 @@ defineProps<{
   // Keys like "password-12" of buttons that were just used, to show a check mark
   copiedCells: Set<string>
   isSearching: boolean
+  inTrash?: boolean
 }>()
 
 const emit = defineEmits<{

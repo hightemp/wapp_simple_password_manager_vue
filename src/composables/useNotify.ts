@@ -2,7 +2,15 @@ import { inject, type InjectionKey } from 'vue'
 
 export type NotificationType = 'success' | 'error' | 'info'
 
-export type NotifyFn = (title: string, message?: string, type?: NotificationType, duration?: number) => void
+/** Button shown in a toast, e.g. "Undo" */
+export interface NotificationAction {
+  label: string
+  run: () => void
+}
+
+export type NotifyFn = (
+  title: string, message?: string, type?: NotificationType, duration?: number, action?: NotificationAction,
+) => void
 
 export const NOTIFY_KEY: InjectionKey<NotifyFn> = Symbol('notify')
 

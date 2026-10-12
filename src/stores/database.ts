@@ -12,7 +12,20 @@ export const DATABASE_PATH = 'passwords-database'
 
 export interface Entry {
   id?: number
+  // Previous values of changed fields, oldest first
+  history?: HistoryVersion[]
   [field: string]: any
+}
+
+/** Values the fields had before one edit (only the fields that changed) */
+export interface HistoryVersion {
+  at: number
+  fields: Record<string, string>
+}
+
+export interface TrashItem {
+  entry: Entry
+  deleted_at: number
 }
 
 export interface Column {
@@ -30,6 +43,8 @@ export interface Table {
   filter: Record<string, string>
   // Explicitly created category paths, so empty categories survive saving
   categories: string[]
+  // Deleted entries, kept for TRASH_RETENTION
+  trash: TrashItem[]
 }
 
 /** Shape of the (encrypted) database file — field names are part of the file format */
@@ -46,6 +61,13 @@ export const COLUMNS: Record<string, Column> = {
   url: { label: 'URL', type: 'text', inTable: true },
   description: { label: 'Description', type: 'textarea', inTable: true },
 }
+
+// Versions kept per entry
+export const HISTORY_LIMIT = 20
+// Entries in the trash are deleted for good after this time
+export const TRASH_RETENTION = 30 * 24 * 60 * 60 * 1000
+// Fields whose changes are recorded (moving to another category is not)
+const HISTORY_FIELDS = Object.keys(COLUMNS).filter((name) => name !== 'category')
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -64,6 +86,7 @@ function createEmptyDatabase(): Database {
       selection_id: null,
       filter: emptyFields(),
       categories: [],
+      trash: [],
     },
   }
 }
@@ -86,7 +109,7 @@ export function parseDatabase(json: string): Database {
  * Validate a decoded database and fill in defaults.
  * Entries without an id (or with a duplicate one) get a new id.
  */
-export function normalizeDatabase(parsed: any): Database {
+export function normalizeDatabase(parsed: any, now = Date.now()): Database {
   const table = parsed?.table
   if (!table || typeof table !== 'object' || Array.isArray(table)) {
     throw new Error('The file is not a password database (missing "table")')
@@ -95,22 +118,21 @@ export function normalizeDatabase(parsed: any): Database {
     throw new Error('The file is not a password database ("table.data" must be a list)')
   }
 
-  const entries: Entry[] = table.data.map((entry: unknown, index: number) => {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-      throw new Error(`Entry #${index + 1} is not an object`)
-    }
-    const result: Entry = {}
-    for (const [key, value] of Object.entries(entry)) {
-      result[key] = key === 'id' ? value : value == null ? '' : String(value)
-    }
-    if ('category' in result) result.category = normalizePath(result.category)
-    return result
-  })
+  const entries: Entry[] = table.data.map((entry: unknown, index: number) => normalizeEntry(entry, `Entry #${index + 1}`))
 
-  // Assign ids to entries without one, keeping existing ids unique
+  // Damaged trash items are dropped rather than failing the whole database;
+  // expired ones are deleted for good
+  const trash: TrashItem[] = (Array.isArray(table.trash) ? table.trash : [])
+    .filter((item: any) => item?.entry && typeof item.entry === 'object' && !Array.isArray(item.entry)
+      && Number.isFinite(item.deleted_at) && now - item.deleted_at < TRASH_RETENTION)
+    .map((item: any) => ({ entry: normalizeEntry(item.entry, 'Deleted entry'), deleted_at: item.deleted_at }))
+
+  // Assign ids to entries without one, keeping existing ids unique (trash included,
+  // so a restored entry never clashes)
+  const allEntries = [...entries, ...trash.map((item) => item.entry)]
   const usedIds = new Set<number>()
   let lastIndex = Number.isInteger(table.last_index) ? table.last_index : 0
-  for (const entry of entries) {
+  for (const entry of allEntries) {
     if (Number.isInteger(entry.id) && !usedIds.has(entry.id!)) {
       usedIds.add(entry.id!)
       lastIndex = Math.max(lastIndex, entry.id!)
@@ -118,7 +140,7 @@ export function normalizeDatabase(parsed: any): Database {
       delete entry.id
     }
   }
-  for (const entry of entries) {
+  for (const entry of allEntries) {
     if (entry.id === undefined) entry.id = ++lastIndex
   }
 
@@ -139,8 +161,58 @@ export function normalizeDatabase(parsed: any): Database {
         ? collectPaths(table.categories.filter((path: unknown) => typeof path === 'string'), [])
         : [],
       filter,
+      trash,
     },
   }
+}
+
+function normalizeEntry(entry: unknown, name: string): Entry {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Error(`${name} is not an object`)
+  }
+  const result: Entry = {}
+  for (const [key, value] of Object.entries(entry)) {
+    if (key === 'id') result.id = value
+    else if (key === 'history') result.history = normalizeHistory(value)
+    else result[key] = value == null ? '' : String(value)
+  }
+  if ('category' in result) result.category = normalizePath(result.category)
+  if (!result.history?.length) delete result.history
+  return result
+}
+
+/** Keep well-formed versions only; values are strings */
+function normalizeHistory(value: unknown): HistoryVersion[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((version) => version && Number.isFinite(version.at) && version.fields && typeof version.fields === 'object')
+    .map((version) => ({
+      at: version.at,
+      fields: Object.fromEntries(Object.entries(version.fields)
+        .map(([key, field]) => [key, field == null ? '' : String(field)])),
+    }))
+    .filter((version) => Object.keys(version.fields).length > 0)
+    .slice(-HISTORY_LIMIT)
+}
+
+/**
+ * Set field values of an entry, recording the previous values of the changed ones
+ * as a history version. Returns whether anything changed.
+ */
+export function changeEntry(entry: Entry, values: Record<string, string>, now = Date.now()): boolean {
+  const previous: Record<string, string> = {}
+  let changed = false
+  for (const [field, value] of Object.entries(values)) {
+    const old = entry[field] ?? ''
+    if (old === value) continue
+    if (HISTORY_FIELDS.includes(field)) previous[field] = old
+    entry[field] = value
+    changed = true
+  }
+  if (Object.keys(previous).length) {
+    entry.history = [...(entry.history ?? []), { at: now, fields: previous }].slice(-HISTORY_LIMIT)
+  }
+  return changed
 }
 
 /** Drop paths that are inside another path of the list */
@@ -184,6 +256,7 @@ export const useDatabaseStore = defineStore('database', () => {
     buildTree(table.value.categories ?? [], table.value.data.map((entry) => entry.category ?? ''))
   )
   const uncategorizedCount = computed(() => table.value.data.filter((entry) => !entry.category).length)
+  const trash = computed(() => table.value.trash ?? [])
 
   // --- actions ---
   function setFormField(fieldName: string, value: string) {
@@ -209,25 +282,80 @@ export const useDatabaseStore = defineStore('database', () => {
     editWindow.value.isOpen = false
   }
 
-  /** Copy form values into the edited item; new items get an id and are appended to the table */
+  /**
+   * Copy form values into the edited item; new items get an id and are appended to the table.
+   * Changes of an existing item are recorded in its history.
+   */
   function saveEditWindow() {
     const item = editWindow.value.item
-    Object.assign(item, form.value)
-    item.category = normalizePath(item.category)
+    const values = { ...form.value, category: normalizePath(form.value.category) }
     if (!item.id) {
+      Object.assign(item, values)
       item.id = ++table.value.last_index
       table.value.data.push(item)
+    } else if (!changeEntry(item, values)) {
+      return
     }
     unsavedChanges.value++
   }
+
+  function findEntry(id: number): Entry {
+    const entry = table.value.data.find((item) => item.id === id)
+    if (!entry) throw new Error('Entry not found')
+    return entry
+  }
+
+  // --- history ---
+
+  /** Set fields of an entry to older values (recorded in the history as a change too) */
+  function restoreFields(id: number, fields: Record<string, string>) {
+    if (changeEntry(findEntry(id), fields)) unsavedChanges.value++
+  }
+
+  function clearHistory(id: number) {
+    const entry = findEntry(id)
+    if (!entry.history) return
+    delete entry.history
+    unsavedChanges.value++
+  }
+
+  // --- trash ---
 
   function removeEntry(entry: Entry) {
     removeEntries([entry.id!])
   }
 
-  function removeEntries(ids: number[]) {
+  /** Move entries to the trash */
+  function removeEntries(ids: number[], now = Date.now()) {
     const remove = new Set(ids)
+    const removed = table.value.data.filter((entry) => remove.has(entry.id!))
+    if (!removed.length) return
     table.value.data = table.value.data.filter((entry) => !remove.has(entry.id!))
+    table.value.trash = [...trash.value, ...removed.map((entry) => ({ entry, deleted_at: now }))]
+    unsavedChanges.value++
+  }
+
+  /** Move entries back from the trash, into the category they were in */
+  function restoreFromTrash(ids: number[]) {
+    const restore = new Set(ids)
+    const restored = trash.value.filter((item) => restore.has(item.entry.id!))
+    if (!restored.length) return
+    table.value.trash = trash.value.filter((item) => !restore.has(item.entry.id!))
+    table.value.data.push(...restored.map((item) => item.entry))
+    unsavedChanges.value++
+  }
+
+  function deleteForever(ids: number[]) {
+    const remove = new Set(ids)
+    const kept = trash.value.filter((item) => !remove.has(item.entry.id!))
+    if (kept.length === trash.value.length) return
+    table.value.trash = kept
+    unsavedChanges.value++
+  }
+
+  function emptyTrash() {
+    if (!trash.value.length) return
+    table.value.trash = []
     unsavedChanges.value++
   }
 
@@ -440,6 +568,7 @@ export const useDatabaseStore = defineStore('database', () => {
     categoryPaths,
     categoryTree,
     uncategorizedCount,
+    trash,
     form,
     editWindow,
     unsavedChanges,
@@ -454,6 +583,11 @@ export const useDatabaseStore = defineStore('database', () => {
     saveEditWindow,
     removeEntry,
     removeEntries,
+    restoreFromTrash,
+    deleteForever,
+    emptyTrash,
+    restoreFields,
+    clearHistory,
     createCategory,
     renameCategory,
     deleteCategory,

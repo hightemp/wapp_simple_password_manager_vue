@@ -127,6 +127,24 @@
       <span class="cat-name">Uncategorized</span>
       <span class="cat-count">{{ uncategorizedCount }}</span>
     </li>
+
+    <!-- Deleted entries -->
+    <li
+      v-if="trashCount !== undefined"
+      :class="['cat-row', 'cat-row--trash', { 'cat-row--selected': trashSelected, 'cat-row--drop': dropTarget === TRASH }]"
+      role="treeitem"
+      :aria-selected="trashSelected"
+      data-path="trash"
+      @click="emit('select-trash')"
+      @dragover="onTrashDragOver"
+      @dragleave="dropTarget = undefined"
+      @drop="onTrashDrop"
+    >
+      <span class="cat-chevron-space" />
+      <div class="i-lucide-trash-2 cat-icon" />
+      <span class="cat-name">Trash</span>
+      <span class="cat-count">{{ trashCount }}</span>
+    </li>
   </ul>
 </template>
 
@@ -150,11 +168,16 @@ const props = withDefaults(defineProps<{
   // Ctrl/⌘+click and Shift+click select several categories
   multiSelect?: boolean
   showAll?: boolean
+  // Show the Trash node with this many entries (hidden when undefined)
+  trashCount?: number
+  trashSelected?: boolean
 }>(), {
   manageable: false,
   multiSelect: false,
   selectedSet: undefined,
   showAll: true,
+  trashCount: undefined,
+  trashSelected: false,
 })
 
 const emit = defineEmits<{
@@ -167,7 +190,12 @@ const emit = defineEmits<{
   (e: 'delete', path: string): void
   (e: 'move-entries', ids: number[], category: string): void
   (e: 'move-categories', paths: string[], newParent: string): void
+  (e: 'select-trash'): void
+  (e: 'trash-entries', ids: number[]): void
 }>()
+
+// Drop target id of the Trash node
+const TRASH = Symbol('trash')
 
 // Rows of the expanded part of the tree, depth-first
 const visibleItems = computed(() => {
@@ -187,6 +215,7 @@ function indent(depth: number) {
 }
 
 function isSelected(path: CategorySelection): boolean {
+  if (props.trashSelected) return false
   return props.selectedSet ? props.selectedSet.has(path) : props.selected === path
 }
 
@@ -256,7 +285,7 @@ defineExpose({ startCreate })
 // Categories being dragged (several when dragging one of the multi-selected ones)
 const draggingCategories = ref<string[]>([])
 // Row under the cursor during a valid drag (undefined = none, null = "All")
-const dropTarget = ref<CategorySelection | undefined>(undefined)
+const dropTarget = ref<CategorySelection | typeof TRASH | undefined>(undefined)
 
 function onDragStart(event: DragEvent, path: string) {
   if (!props.manageable || !event.dataTransfer) return
@@ -301,6 +330,22 @@ function onDrop(event: DragEvent, target: CategorySelection) {
   draggingCategories.value = []
   if (paths) emit('move-categories', JSON.parse(paths), target ?? '')
 }
+
+// Entries dropped on Trash are deleted (categories cannot be)
+function onTrashDragOver(event: DragEvent) {
+  if (!event.dataTransfer?.types.includes(ENTRIES_DRAG_TYPE)) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+  dropTarget.value = TRASH
+}
+
+function onTrashDrop(event: DragEvent) {
+  dropTarget.value = undefined
+  const entries = event.dataTransfer?.getData(ENTRIES_DRAG_TYPE)
+  if (!entries) return
+  event.preventDefault()
+  emit('trash-entries', JSON.parse(entries))
+}
 </script>
 
 <style scoped>
@@ -324,6 +369,10 @@ function onDrop(event: DragEvent, target: CategorySelection) {
   cursor: pointer;
   user-select: none;
 }
+.cat-row--trash {
+  margin-top: var(--space-2);
+}
+
 .cat-row:hover {
   background: var(--c-bg-hover);
   color: var(--c-text);

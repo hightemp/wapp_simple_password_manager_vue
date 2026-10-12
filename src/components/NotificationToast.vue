@@ -16,6 +16,9 @@
           <div class="notification-title">{{ notif.title }}</div>
           <div v-if="notif.message" class="notification-message">{{ notif.message }}</div>
         </div>
+        <button v-if="notif.action" class="notification-action" @click="runAction(notif)">
+          {{ notif.action.label }}
+        </button>
         <button class="notification-dismiss" @click="dismiss(notif.id)" aria-label="Dismiss">
           <div class="i-lucide-x" />
         </button>
@@ -29,7 +32,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { NotificationType } from '@/composables/useNotify'
+import type { NotificationType, NotificationAction } from '@/composables/useNotify'
 
 interface Notification {
   id: number
@@ -37,15 +40,21 @@ interface Notification {
   message?: string
   type: NotificationType
   duration: number
+  action?: NotificationAction
 }
 
 const notifications = ref<Notification[]>([])
 let nextId = 0
 
-function show(title: string, message = '', type: NotificationType = 'success', duration = 3000) {
+function show(title: string, message = '', type: NotificationType = 'success', duration = 3000, action?: NotificationAction) {
   const id = ++nextId
-  notifications.value.push({ id, title, message, type, duration })
+  notifications.value.push({ id, title, message, type, duration, action })
   setTimeout(() => dismiss(id), duration)
+}
+
+function runAction(notif: Notification) {
+  dismiss(notif.id)
+  notif.action?.run()
 }
 
 function dismiss(id: number) {
@@ -119,6 +128,23 @@ defineExpose({ show })
   font-size: var(--text-xs);
   color: var(--c-text-secondary);
   margin-top: 2px;
+}
+
+.notification-action {
+  flex-shrink: 0;
+  align-self: center;
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--c-accent) 12%, transparent);
+  color: var(--c-accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.notification-action:hover {
+  background: color-mix(in srgb, var(--c-accent) 20%, transparent);
 }
 
 .notification-dismiss {

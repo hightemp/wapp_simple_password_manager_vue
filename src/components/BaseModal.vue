@@ -107,8 +107,12 @@ function handleTab(e: KeyboardEvent) {
   }
 }
 
+// Element focused before opening; gets focus back on close (e.g. the modal underneath)
+let previousFocus: HTMLElement | null = null
+
 watch(() => props.modelValue, async (isOpen) => {
   if (isOpen) {
+    previousFocus = document.activeElement as HTMLElement | null
     document.body.style.overflow = 'hidden'
     await nextTick()
     overlayRef.value?.addEventListener('keydown', handleTab)
@@ -118,6 +122,8 @@ watch(() => props.modelValue, async (isOpen) => {
   } else {
     document.body.style.overflow = ''
     overlayRef.value?.removeEventListener('keydown', handleTab)
+    if (previousFocus?.isConnected) previousFocus.focus()
+    previousFocus = null
   }
 })
 

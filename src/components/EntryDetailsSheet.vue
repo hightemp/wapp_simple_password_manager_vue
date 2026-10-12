@@ -14,7 +14,7 @@
             <!-- Category: shown even when empty, with a button to move the entry -->
             <template v-if="key === 'category'">
               <span :class="['details-text', { 'details-empty': !entry[key] }]">{{ entry[key] || 'Uncategorized' }}</span>
-              <button class="details-btn" aria-label="Change category" @click="emit('change-category')">
+              <button v-if="!inTrash" class="details-btn" aria-label="Change category" @click="emit('change-category')">
                 <div class="i-lucide-folder-input" />
               </button>
             </template>
@@ -52,9 +52,20 @@
     </dl>
 
     <template #footer>
-      <div class="modal-footer-row details-actions">
+      <div v-if="inTrash" class="modal-footer-row details-actions">
+        <button class="action-btn action-btn--danger" @click="emit('delete')">
+          <div class="i-lucide-trash-2" /> Delete forever
+        </button>
+        <button class="action-btn action-btn--primary" @click="emit('restore')">
+          <div class="i-lucide-undo-2" /> Restore
+        </button>
+      </div>
+      <div v-else class="modal-footer-row details-actions">
         <button class="action-btn action-btn--danger" @click="emit('delete')">
           <div class="i-lucide-trash-2" /> Delete
+        </button>
+        <button class="action-btn action-btn--ghost" @click="emit('history')">
+          <div class="i-lucide-history" /> History
         </button>
         <button class="action-btn action-btn--primary" @click="emit('edit')">
           <div class="i-lucide-pencil" /> Edit
@@ -72,6 +83,8 @@ import BaseModal from './BaseModal.vue'
 const props = defineProps<{
   // Sheet is shown while an entry is set
   entry: Entry | null
+  // A deleted entry: restore / delete forever instead of edit / delete
+  inTrash?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -79,6 +92,8 @@ const emit = defineEmits<{
   (e: 'edit'): void
   (e: 'change-category'): void
   (e: 'delete'): void
+  (e: 'history'): void
+  (e: 'restore'): void
   (e: 'close'): void
 }>()
 

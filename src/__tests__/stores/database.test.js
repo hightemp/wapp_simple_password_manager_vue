@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useDatabaseStore, parseDatabase } from '../../stores/database'
+import { useDatabaseStore, parseDatabase, normalizeDatabase, changeEntry, HISTORY_LIMIT, TRASH_RETENTION } from '../../stores/database'
 import { useReposStore } from '../../stores/repos'
 import { NotFoundError } from '../../services/FileSystemDriver'
 import { DecryptionError } from '../../utils/crypto'
@@ -418,6 +418,185 @@ describe('Database Store (Pinia)', () => {
       db.importDatabase(JSON.stringify({ table: { data: [{ category: 'A//B' }], categories: ['Empty', 5] } }))
       expect(db.table.categories).toEqual(['Empty'])
       expect(db.table.data[0].category).toBe('A/B')
+    })
+  })
+
+  describe('history', () => {
+    function seed() {
+      db.setDatabase(normalizeDatabase({
+        table: { data: [{ id: 1, category: 'Web', name: 'Site', login: 'old-login', password: 'old-pass', url: '', description: '' }] },
+      }))
+    }
+    const entry = () => db.table.data[0]
+
+    function edit(values) {
+      db.openEditWindow(entry())
+      for (const [field, value] of Object.entries(values)) db.setFormField(field, value)
+      db.saveEditWindow()
+    }
+
+    it('should record previous values of changed fields only', () => {
+      seed()
+      edit({ password: 'new-pass', description: 'note' })
+      expect(entry().password).toBe('new-pass')
+      expect(entry().history).toHaveLength(1)
+      expect(entry().history[0].fields).toEqual({ password: 'old-pass', description: '' })
+      expect(db.unsavedChanges).toBe(1)
+    })
+
+    it('should not record a version when nothing changed', () => {
+      seed()
+      edit({})
+      expect(entry().history).toBeUndefined()
+      expect(db.unsavedChanges).toBe(0)
+    })
+
+    it('should not record category changes', () => {
+      seed()
+      edit({ category: 'Mail' })
+      expect(entry().category).toBe('Mail')
+      expect(entry().history).toBeUndefined()
+      expect(db.unsavedChanges).toBe(1)
+      db.moveEntries([1], 'Other')
+      expect(entry().history).toBeUndefined()
+    })
+
+    it('should not record history for new entries', () => {
+      seed()
+      db.openEditWindow({})
+      db.setFormField('name', 'New')
+      db.saveEditWindow()
+      expect(db.table.data[1].history).toBeUndefined()
+    })
+
+    it(`should keep the last ${HISTORY_LIMIT} versions`, () => {
+      const item = { id: 1, password: 'p0' }
+      for (let i = 1; i <= HISTORY_LIMIT + 5; i++) changeEntry(item, { password: 'p' + i }, i)
+      expect(item.history).toHaveLength(HISTORY_LIMIT)
+      expect(item.history[0].fields.password).toBe('p5')
+      expect(item.history.at(-1)).toEqual({ at: HISTORY_LIMIT + 5, fields: { password: 'p' + (HISTORY_LIMIT + 4) } })
+    })
+
+    it('should restore fields and record the restore as a change', () => {
+      seed()
+      edit({ login: 'new-login', password: 'new-pass' })
+      db.restoreFields(1, entry().history[0].fields)
+      expect(entry().login).toBe('old-login')
+      expect(entry().password).toBe('old-pass')
+      expect(entry().history).toHaveLength(2)
+      expect(entry().history[1].fields).toEqual({ login: 'new-login', password: 'new-pass' })
+    })
+
+    it('should clear the history', () => {
+      seed()
+      edit({ password: 'x' })
+      db.clearHistory(1)
+      expect(entry().history).toBeUndefined()
+      expect(entry().password).toBe('x')
+    })
+
+    it('should keep valid versions when loading and drop damaged ones', () => {
+      const database = normalizeDatabase({
+        table: {
+          data: [{
+            id: 1, name: 'A',
+            history: [
+              { at: 5, fields: { password: 'p', login: null } },
+              { at: 'x', fields: { password: 'bad' } },
+              { at: 6 },
+              { at: 7, fields: {} },
+              null,
+            ],
+          }, { id: 2, history: 'oops' }],
+        },
+      })
+      expect(database.table.data[0].history).toEqual([{ at: 5, fields: { password: 'p', login: '' } }])
+      expect(database.table.data[1].history).toBeUndefined()
+    })
+  })
+
+  describe('trash', () => {
+    const DAY = 24 * 60 * 60 * 1000
+
+    function seed() {
+      db.setDatabase(normalizeDatabase({
+        table: { data: [{ id: 1, name: 'A', category: 'Work' }, { id: 2, name: 'B' }, { id: 3, name: 'C' }] },
+      }))
+    }
+    const ids = () => db.table.data.map((e) => e.id)
+    const trashIds = () => db.trash.map((item) => item.entry.id)
+
+    it('should move removed entries to the trash with their history', () => {
+      seed()
+      changeEntry(db.table.data[0], { password: 'x' })
+      db.removeEntries([1, 3], 1000)
+      expect(ids()).toEqual([2])
+      expect(trashIds()).toEqual([1, 3])
+      expect(db.trash[0].deleted_at).toBe(1000)
+      expect(db.trash[0].entry.history).toHaveLength(1)
+      expect(db.unsavedChanges).toBe(1)
+    })
+
+    it('should restore entries into their category', () => {
+      seed()
+      db.removeEntries([1])
+      db.restoreFromTrash([1])
+      expect(ids()).toEqual([2, 3, 1])
+      expect(db.table.data[2].category).toBe('Work')
+      expect(db.trash).toEqual([])
+      expect(db.categoryPaths).toContain('Work')
+    })
+
+    it('should delete entries forever and empty the trash', () => {
+      seed()
+      db.removeEntries([1, 2, 3])
+      db.deleteForever([2])
+      expect(trashIds()).toEqual([1, 3])
+      db.emptyTrash()
+      expect(db.trash).toEqual([])
+      expect(ids()).toEqual([])
+    })
+
+    it('should not count unchanged operations as changes', () => {
+      seed()
+      db.removeEntries([99])
+      db.restoreFromTrash([1])
+      db.deleteForever([1])
+      db.emptyTrash()
+      expect(db.unsavedChanges).toBe(0)
+    })
+
+    it('should drop expired and damaged trash items when loading', () => {
+      const now = 100 * DAY
+      const database = normalizeDatabase({
+        table: {
+          data: [],
+          trash: [
+            { entry: { id: 1, name: 'fresh' }, deleted_at: now - 29 * DAY },
+            { entry: { id: 2, name: 'expired' }, deleted_at: now - TRASH_RETENTION },
+            { entry: 'oops', deleted_at: now },
+            { entry: { id: 3 } },
+          ],
+        },
+      }, now)
+      expect(database.table.trash.map((item) => item.entry.name)).toEqual(['fresh'])
+    })
+
+    it('should keep ids unique across entries and trash', () => {
+      const database = normalizeDatabase({
+        table: {
+          last_index: 1,
+          data: [{ id: 1, name: 'A' }],
+          trash: [{ entry: { id: 1, name: 'B' }, deleted_at: Date.now() }, { entry: { id: 7, name: 'C' }, deleted_at: Date.now() }],
+        },
+      })
+      expect(database.table.data[0].id).toBe(1)
+      expect(database.table.trash.map((item) => item.entry.id)).toEqual([8, 7])
+      expect(database.table.last_index).toBe(8)
+    })
+
+    it('should accept databases without a trash', () => {
+      expect(normalizeDatabase({ table: { data: [] } }).table.trash).toEqual([])
     })
   })
 })

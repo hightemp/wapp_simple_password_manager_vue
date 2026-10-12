@@ -41,6 +41,8 @@ Screenshots use fictional demo data and are regenerated with `npm run screenshot
 - **Password generator** — configurable length, character sets, strength indicator
 - **Password masking** — passwords hidden in table, reveal on demand with auto-hide
 - **Clipboard copy** — one-click copy for logins and passwords
+- **Entry history** — previous values of every field (last 20 changes per entry), restore a whole version or a single field
+- **Trash** — deleted entries can be restored for 30 days
 - **Import/Export** — backup and restore your database as JSON
 - **Keyboard shortcuts** — `Ctrl+S` save, `Ctrl+N` new entry
 - **Responsive design** — works on desktop, tablet, and mobile
@@ -54,7 +56,7 @@ Screenshots use fictional demo data and are regenerated with `npm run screenshot
 - **Vite 6** — fast builds with HMR
 - **UnoCSS** — atomic CSS with custom design tokens
 - **Lucide Icons** — clean, consistent icon set
-- **Vitest** — 122 unit tests (crypto, debounce, stores, FileSystemDriver, Google Drive client)
+- **Vitest** — 137 unit tests (crypto, debounce, stores, FileSystemDriver, Google Drive client)
 - **Web Crypto API** — native browser encryption (AES-256-GCM + PBKDF2)
 - **crypto-js** — only for reading legacy (v1/v2) database files
 
@@ -108,7 +110,7 @@ Click **Connect** to unlock the database. Then:
 
 - **Add** — create new password entries
 - **Edit** — double-click a row or select + Edit
-- **Delete** — select rows + Delete (with confirmation)
+- **Delete** — select rows + Delete; entries go to the trash (the toast has an **Undo** button)
 - **Select several** — Ctrl/⌘+click toggles a row, Shift+click selects a range
 - **Save** — persist changes to the repository
 - **Filter** — type in any column header to filter entries
@@ -128,13 +130,30 @@ The panel on the left shows categories as a tree with entry counts (a category's
 
 Categories are stored as paths in the `category` field of each entry, so databases from older versions keep their categories as top-level ones.
 
+### History
+
+Every time an entry is saved with changes, the previous values of the changed fields are kept (the last 20 versions per entry; moving to another category is not recorded). Open it with **History** in the entry form, in the row's context menu, or in the entry details on a phone:
+
+- Old passwords are masked, with buttons to reveal and copy them
+- **Restore** brings back a whole version or a single field; the restore itself is recorded, so it can be undone too. In the entry form, restoring fills the form and is stored on **Save**
+- **Clear history** removes the previous values for good — e.g. after a password leaked
+
+### Trash
+
+Deleted entries go to **Trash** at the bottom of the category tree (drag rows onto it to delete them). Entries keep their category and history there and are deleted for good 30 days after deletion.
+
+- **Restore** — right-click an entry in the trash (or open it on a phone); it returns to its category
+- **Delete forever** — the context menu or the Delete key, with confirmation
+- **Empty trash** — the button above the list
+
 ### On a phone
 
 Below 768 px the app switches to a mobile layout:
 
 - **Search** — one field at the top searches all fields; the button next to it picks a category
 - **Entries** — a scrolling list of cards; the buttons on a card copy the login / password
-- **Details** — tap a card to see all fields, reveal or copy the password, open the URL, move it to another category, **Edit** or **Delete**
+- **Details** — tap a card to see all fields, reveal or copy the password, open the URL, move it to another category, see its **History**, **Edit** or **Delete**
+- **Trash** — in the category picker; open a deleted entry to **Restore** it or delete it forever
 - **Bottom bar** — Repository · Add · Save · **More** (export, import, change master password, theme, lock)
 
 ## Security

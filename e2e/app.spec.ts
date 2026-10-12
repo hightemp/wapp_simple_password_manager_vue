@@ -116,17 +116,16 @@ test.describe('CRUD Operations', () => {
     // Native dialogs must not be used anymore
     page.on('dialog', (dialog) => { throw new Error('Unexpected native dialog: ' + dialog.message()) })
 
-    // Cancel keeps the entry
+    // Deleting moves the entry to the trash without asking; Undo brings it back
     await page.locator('.sidebar-btn[aria-label="Delete"]').click()
-    await expect(page.locator('.modal-panel:has-text("Delete entry")')).toBeVisible()
-    await page.locator('.modal-panel button:has-text("Cancel")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+    await expect(page.locator('.grid-row:has-text("To Delete")')).toHaveCount(0)
+    await page.locator('.notification:has-text("Moved to trash") .notification-action').click()
     await expect(page.locator('.grid-row:has-text("To Delete")')).toBeVisible()
 
-    // Confirm deletes it
+    // Delete again: entry should be gone
+    await page.locator('.grid-row:has-text("To Delete")').click()
     await page.locator('.sidebar-btn[aria-label="Delete"]').click()
-    await page.locator('.modal-panel button:has-text("Delete")').click()
-
-    // Entry should be gone
     await expect(page.locator('.grid-row:has-text("To Delete")')).toHaveCount(0)
   })
 })
@@ -594,15 +593,13 @@ test.describe('Import & Export', () => {
     // Now delete the entry to simulate "clean state"
     await page.locator('.grid-row:not(.grid-header)').first().click()
     await page.locator('.sidebar-btn[aria-label="Delete"]').click()
-    await page.locator('.modal-panel button:has-text("Delete")').click()
     await expect(page.locator('.grid-row:has-text("Export Test")')).toHaveCount(0)
 
     // Import the previously exported file
     const fileInput = page.locator('input[type="file"]')
     await fileInput.setInputFiles(filePath!)
 
-    // Entry should be restored (match table rows only — the closing confirm dialog
-    // can still contain 'Delete "Export Test"?' during its leave animation)
+    // Entry should be restored (match table rows only — the "Moved to trash" toast names it too)
     await expect(page.locator('.grid-row:has-text("Export Test")')).toBeVisible({ timeout: 5000 })
     await expect(page.locator('.grid-row:has-text("exportuser")')).toBeVisible()
   })
@@ -778,9 +775,9 @@ test.describe('Categories', () => {
     await expect(page.locator('.grid-row.active')).toHaveCount(3)
 
     await page.keyboard.press('Delete')
-    await expect(page.locator('.modal-panel')).toContainText('Delete 3 selected entries?')
-    await page.locator('.modal-panel button:has-text("Delete")').click()
+    await expect(page.locator('.notification:has-text("3 entries moved to trash")')).toBeVisible()
     await expect(rows(page)).toHaveCount(1)
+    await expect(page.locator('.cat-row[data-path="trash"] .cat-count')).toHaveText('3')
   })
 
   test('should suggest categories in the entry form and create new ones', async ({ page }) => {
@@ -931,8 +928,6 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
     await addEntry(page, { name: 'Mobile Delete' })
     await page.locator('.entry-card:has-text("Mobile Delete")').click()
     await page.locator('.modal-panel button:has-text("Delete")').click()
-    // Confirm dialog stacks on top of the details sheet
-    await page.locator('.modal-panel:has-text("Delete entry") button:has-text("Delete")').click()
 
     await expect(page.locator('.entry-card:has-text("Mobile Delete")')).toHaveCount(0)
     await expect(page.locator('.modal-panel')).toHaveCount(0)
@@ -956,7 +951,6 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
     // Delete the entry, then restore it from the exported file
     await page.locator('.entry-card:has-text("Exported")').click()
     await page.locator('.modal-panel button:has-text("Delete")').click()
-    await page.locator('.modal-panel:has-text("Delete entry") button:has-text("Delete")').click()
     await expect(page.locator('.entry-card')).toHaveCount(0)
 
     await page.locator('input[type="file"]').setInputFiles(filePath!)
@@ -1023,6 +1017,39 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
     await expect(page.locator('.modal-panel [data-field="category"]')).toContainText('Personal')
     await expect(page.locator('.notification:has-text("Entry moved")')).toBeVisible()
   })
+
+  test('should show history and restore from the trash', async ({ page }) => {
+    await addEntry(page, { name: 'Phone Site', password: 'first-pass' })
+
+    // Edit the password, then look at the history from the details sheet
+    await page.locator('.entry-card:has-text("Phone Site")').click()
+    await page.locator('.modal-panel button:has-text("Edit")').click()
+    await page.locator('.modal-panel .form-field-input').nth(3).fill('second-pass')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+
+    await page.locator('.entry-card:has-text("Phone Site")').click()
+    await page.locator('.modal-panel button:has-text("History")').click()
+    const history = page.locator('.modal-panel:has-text("History: Phone Site")')
+    await history.locator('[aria-label="Show Password"]').click()
+    await expect(history.locator('[data-field="password"]')).toContainText('first-pass')
+    await history.locator('[aria-label="Restore Password"]').click()
+    // The restore is recorded as the newest version; the old one now matches the entry
+    await expect(history.locator('.history-version')).toHaveCount(2)
+    await expect(history.locator('.history-version').last().locator('[aria-label="Restore Password"]')).toBeDisabled()
+    await history.locator('button:has-text("Close")').click()
+
+    // Delete, then restore it from the trash in the category sheet
+    await page.locator('.modal-panel button:has-text("Delete")').click()
+    await expect(page.locator('.entry-card')).toHaveCount(0)
+    await page.locator('[aria-label="Choose category"]').click()
+    await page.locator('.modal-panel .cat-row[data-path="trash"]').click()
+    await expect(page.locator('.mobile-category-name')).toHaveText('Trash')
+    await page.locator('.entry-card:has-text("Phone Site")').click()
+    await page.locator('.modal-panel button:has-text("Restore")').click()
+    await expect(page.locator('.entry-card')).toHaveCount(0)
+    await expect(page.locator('.notification:has-text("Entry restored")')).toBeVisible()
+  })
 })
 
 // ====== Helper: add one entry and return to grid ======
@@ -1037,6 +1064,175 @@ async function addOneEntry(page: Page, name = 'TestEntry') {
   await page.locator('button:has-text("Save")').click()
   await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
 }
+
+test.describe('History', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+  })
+
+  const rows = (page: Page) => page.locator('.grid-row:not(.grid-header)')
+  const inputs = (page: Page) => page.locator('.modal-panel .form-field-input')
+
+  async function addAndEdit(page: Page) {
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await inputs(page).nth(1).fill('Site')
+    await inputs(page).nth(2).fill('old-login')
+    await inputs(page).nth(3).fill('old-pass')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+
+    await rows(page).first().dblclick()
+    await inputs(page).nth(2).fill('new-login')
+    await inputs(page).nth(3).fill('new-pass')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+  }
+
+  test('should show previous values and restore one field', async ({ page }) => {
+    await addAndEdit(page)
+
+    await rows(page).first().click({ button: 'right' })
+    await page.locator('.ctx-item:has-text("History")').click()
+    const history = page.locator('.modal-panel:has-text("History: Site")')
+    await expect(history.locator('.history-version')).toHaveCount(1)
+    await expect(history.locator('[data-field="login"]')).toContainText('old-login')
+    // Old passwords are masked until shown
+    await expect(history.locator('[data-field="password"]')).not.toContainText('old-pass')
+    await history.locator('[aria-label="Show Password"]').click()
+    await expect(history.locator('[data-field="password"]')).toContainText('old-pass')
+
+    // Restoring a field changes the entry right away and is recorded too
+    await history.locator('[aria-label="Restore Password"]').click()
+    await expect(history.locator('.history-version')).toHaveCount(2)
+    await expect(history.locator('.history-version').first().locator('[data-field="password"]')).toHaveCount(1)
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+
+    await rows(page).first().dblclick()
+    await expect(inputs(page).nth(2)).toHaveValue('new-login')
+    await expect(inputs(page).nth(3)).toHaveValue('old-pass')
+  })
+
+  test('should restore a version into the edit form and clear the history', async ({ page }) => {
+    await addAndEdit(page)
+
+    await rows(page).first().dblclick()
+    await expect(page.locator('.edit-history-count')).toHaveText('1')
+    await page.locator('.modal-panel button:has-text("History")').click()
+    await page.locator('.modal-panel [aria-label="Restore version"]').click()
+    // Restoring from the form fills it; nothing is stored until Save
+    await expect(page.locator('.modal-panel:has-text("History:")')).toHaveCount(0)
+    await expect(inputs(page).nth(2)).toHaveValue('old-login')
+    await expect(inputs(page).nth(3)).toHaveValue('old-pass')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+
+    await rows(page).first().dblclick()
+    await expect(page.locator('.edit-history-count')).toHaveText('2')
+    await page.locator('.modal-panel button:has-text("History")').click()
+    await page.locator('.modal-panel button:has-text("Clear history")').click()
+    await page.locator('.modal-panel:has-text("Delete all previous values") button:has-text("Clear")').click()
+    await expect(page.locator('.modal-panel:has-text("History:")')).toContainText('No changes yet')
+  })
+
+  test('should keep the history after saving and reloading', async ({ page }) => {
+    await addAndEdit(page)
+    await page.keyboard.press('ControlOrMeta+s')
+    await expect(page.locator('.notification:has-text("Saved")')).toBeVisible()
+
+    await page.reload()
+    await connectLocalStorage(page)
+    await rows(page).first().dblclick()
+    await expect(page.locator('.edit-history-count')).toHaveText('1')
+  })
+})
+
+test.describe('Trash', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+  })
+
+  const rows = (page: Page) => page.locator('.grid-row:not(.grid-header)')
+  const trashNode = (page: Page) => page.locator('.cat-row[data-path="trash"]')
+
+  async function addEntry(page: Page, name: string, category = '') {
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    const inputs = page.locator('.modal-panel .form-field-input')
+    if (category) await inputs.nth(0).fill(category)
+    await inputs.nth(1).fill(name)
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+  }
+
+  test('should move entries to the trash and restore them', async ({ page }) => {
+    await addEntry(page, 'Alpha', 'Work')
+    await addEntry(page, 'Beta')
+
+    await rows(page).filter({ hasText: 'Alpha' }).click()
+    await page.keyboard.press('Delete')
+    await expect(page.locator('.cat-row[data-path="Work"]')).toHaveCount(0)
+    // Entries can also be dragged onto the trash
+    await rows(page).filter({ hasText: 'Beta' }).dragTo(trashNode(page))
+    await expect(rows(page)).toHaveCount(0)
+    await expect(trashNode(page).locator('.cat-count')).toHaveText('2')
+
+    await trashNode(page).click()
+    await expect(page.locator('.trash-bar')).toBeVisible()
+    await expect(rows(page)).toHaveCount(2)
+
+    // Restore puts the entry back into its category
+    await rows(page).filter({ hasText: 'Alpha' }).click({ button: 'right' })
+    await page.locator('.ctx-item:has-text("Restore")').click()
+    await expect(rows(page)).toHaveCount(1)
+    await expect(page.locator('.cat-row[data-path="Work"] .cat-count')).toHaveText('1')
+
+    // Choosing a category leaves the trash
+    await page.locator('.cat-row[data-path="Work"]').click()
+    await expect(page.locator('.trash-bar')).toHaveCount(0)
+    await expect(rows(page)).toHaveCount(1)
+  })
+
+  test('should delete forever and empty the trash after confirming', async ({ page }) => {
+    await addEntry(page, 'Gamma')
+    await addEntry(page, 'Delta')
+    await addEntry(page, 'Epsilon')
+    for (const name of ['Gamma', 'Delta', 'Epsilon']) {
+      await rows(page).filter({ hasText: name }).click()
+      await page.keyboard.press('Delete')
+    }
+    await trashNode(page).click()
+
+    // Delete forever asks first
+    await rows(page).filter({ hasText: 'Gamma' }).click()
+    await page.keyboard.press('Delete')
+    const confirm = page.locator('.modal-panel:has-text("for good")')
+    await confirm.locator('button:has-text("Cancel")').click()
+    await expect(rows(page)).toHaveCount(3)
+    await rows(page).filter({ hasText: 'Gamma' }).click()
+    await page.keyboard.press('Delete')
+    await confirm.locator('button:has-text("Delete forever")').click()
+    await expect(rows(page)).toHaveCount(2)
+
+    await page.locator('.trash-bar button:has-text("Empty trash")').click()
+    await page.locator('.modal-panel button:has-text("Empty trash")').click()
+    await expect(page.locator('.empty-title')).toHaveText('Trash is empty')
+    await expect(trashNode(page).locator('.cat-count')).toHaveText('0')
+  })
+
+  test('should keep the trash after saving and reloading', async ({ page }) => {
+    await addEntry(page, 'Kept')
+    await rows(page).first().click()
+    await page.keyboard.press('Delete')
+    await page.keyboard.press('ControlOrMeta+s')
+    await expect(page.locator('.notification:has-text("Saved")')).toBeVisible()
+
+    await page.reload()
+    await connectLocalStorage(page)
+    await expect(trashNode(page).locator('.cat-count')).toHaveText('1')
+  })
+})
 
 test.describe('Escape Key Behavior', () => {
   test.beforeEach(async ({ page }) => {

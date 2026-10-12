@@ -15,16 +15,31 @@
           <div class="i-lucide-lock" /> Copy Password
         </button>
         <div class="ctx-sep" />
-        <button class="ctx-item" @click="emit('edit')">
-          <div class="i-lucide-pencil" /> Edit
-        </button>
-        <button class="ctx-item" v-if="entry.url" @click="openUrl(entry.url)">
-          <div class="i-lucide-external-link" /> Open URL
-        </button>
-        <div class="ctx-sep" />
-        <button class="ctx-item ctx-item--danger" @click="emit('delete')">
-          <div class="i-lucide-trash-2" /> Delete
-        </button>
+        <!-- Deleted entry: restore or delete for good -->
+        <template v-if="inTrash">
+          <button class="ctx-item" @click="emit('restore')">
+            <div class="i-lucide-undo-2" /> Restore
+          </button>
+          <div class="ctx-sep" />
+          <button class="ctx-item ctx-item--danger" @click="emit('delete')">
+            <div class="i-lucide-trash-2" /> Delete Forever
+          </button>
+        </template>
+        <template v-else>
+          <button class="ctx-item" @click="emit('edit')">
+            <div class="i-lucide-pencil" /> Edit
+          </button>
+          <button class="ctx-item" @click="emit('history')">
+            <div class="i-lucide-history" /> History
+          </button>
+          <button class="ctx-item" v-if="entry.url" @click="openUrl(entry.url)">
+            <div class="i-lucide-external-link" /> Open URL
+          </button>
+          <div class="ctx-sep" />
+          <button class="ctx-item ctx-item--danger" @click="emit('delete')">
+            <div class="i-lucide-trash-2" /> Delete
+          </button>
+        </template>
       </div>
     </Transition>
   </Teleport>
@@ -38,12 +53,15 @@ const props = defineProps<{
   entry: Record<string, any> | null
   x: number
   y: number
+  inTrash?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'copy', field: 'login' | 'password'): void
   (e: 'edit'): void
   (e: 'delete'): void
+  (e: 'history'): void
+  (e: 'restore'): void
   (e: 'close'): void
 }>()
 

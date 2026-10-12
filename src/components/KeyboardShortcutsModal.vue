@@ -21,7 +21,7 @@ const SHORTCUTS = [
   { key: '↑ / ↓', description: 'Select previous / next entry' },
   { key: '← / →', description: 'Previous / next page' },
   { key: 'Home / End', description: 'First / last page' },
-  { key: 'Delete', description: 'Delete selected entry' },
+  { key: 'Delete', description: 'Move selected entries to the trash' },
   { key: 'Enter', description: 'Edit selected entry' },
   { key: 'Escape', description: 'Deselect / Close modal' },
 ]

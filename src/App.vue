@@ -29,11 +29,16 @@
             <span class="mobile-category-name">{{ categoryLabel }}</span>
           </button>
         </div>
+        <div v-if="isTrashView" class="trash-bar">
+          <span class="trash-bar-text">Deleted entries are removed for good after {{ TRASH_DAYS }} days</span>
+          <button v-if="db.trash.length" class="action-btn action-btn--danger action-btn--sm" @click="emptyTrash">Empty trash</button>
+        </div>
         <div class="mobile-list-scroll">
           <EntryCardList
             :entries="filteredRows"
             :copied-cells="copiedCells"
             :is-searching="searchQuery.trim() !== ''"
+            :in-trash="isTrashView"
             @open="(entry) => (detailsEntry = entry)"
             @copy="copyField"
           />
@@ -44,6 +49,13 @@
       <div v-else class="desktop-layout">
       <CategoryPanel />
       <div class="table-area">
+      <div v-if="isTrashView" class="trash-bar">
+        <div class="i-lucide-trash-2 trash-bar-icon" />
+        <span class="trash-bar-text">Deleted entries are removed for good after {{ TRASH_DAYS }} days. Right-click an entry to restore it.</span>
+        <button v-if="db.trash.length" class="action-btn action-btn--danger action-btn--sm" @click="emptyTrash">
+          <div class="i-lucide-trash-2" /> Empty trash
+        </button>
+      </div>
       <!-- Pagination bar -->
       <div class="pagination-bar" v-if="pageCount > 1">
         <button class="pg-btn" @click="goToFirstPage" :disabled="page <= 1" aria-label="First page">
@@ -96,9 +108,16 @@
 
           <!-- Empty state -->
           <div v-if="pageRows.length === 0" class="empty-state">
-            <div class="i-lucide-database empty-icon" />
-            <p class="empty-title">No entries</p>
-            <p class="empty-sub">Click <strong>Add</strong> to create your first entry</p>
+            <template v-if="isTrashView">
+              <div class="i-lucide-trash-2 empty-icon" />
+              <p class="empty-title">Trash is empty</p>
+              <p class="empty-sub">Deleted entries stay here for {{ TRASH_DAYS }} days</p>
+            </template>
+            <template v-else>
+              <div class="i-lucide-database empty-icon" />
+              <p class="empty-title">No entries</p>
+              <p class="empty-sub">Click <strong>Add</strong> to create your first entry</p>
+            </template>
           </div>
 
           <!-- Rows -->
@@ -110,7 +129,7 @@
               :style="gridStyle"
               role="row"
               :aria-selected="selectedIds.has(row.id!)"
-              draggable="true"
+              :draggable="!isTrashView"
               @mousedown="(event) => event.shiftKey && event.preventDefault()"
               @click="selectRow(row, $event)"
               @dragstart="onRowDragStart($event, row)"
@@ -166,8 +185,11 @@
       :entry="contextMenu.entry"
       :x="contextMenu.x"
       :y="contextMenu.y"
+      :in-trash="isTrashView"
       @copy="(field) => copyField(contextMenu.entry, field)"
       @edit="db.openEditWindow(contextMenu.entry)"
+      @history="historyEntry = contextMenu.entry"
+      @restore="restoreEntries([contextMenu.entry.id])"
       @delete="deleteEntry(contextMenu.entry)"
       @close="closeContextMenu"
     />
@@ -182,11 +204,21 @@
     <MobileMenuSheet v-model="showMobileMenu" :is-dark-theme="isDarkTheme" @action="onMenuAction" />
     <EntryDetailsSheet
       :entry="detailsEntry"
+      :in-trash="isTrashView"
       @copy="(field) => copyField(detailsEntry, field)"
       @edit="editFromDetails"
       @change-category="categoryPicker = { mode: 'move', entry: detailsEntry! }"
+      @history="historyEntry = detailsEntry"
+      @restore="restoreFromDetails"
       @delete="deleteFromDetails"
       @close="detailsEntry = null"
+    />
+    <!-- After the details sheet so it opens on top of it -->
+    <EntryHistoryModal
+      :entry="historyEntry"
+      @restore="restoreHistory"
+      @clear="clearHistory"
+      @close="historyEntry = null"
     />
     <!-- After the details sheet so it opens on top of it -->
     <CategoryPickerSheet
@@ -194,8 +226,10 @@
       :title="categoryPicker?.mode === 'move' ? 'Move to category' : 'Categories'"
       :selected="categoryPicker?.mode === 'move' ? (categoryPicker.entry?.category ?? '') : activeCategory"
       :show-all="categoryPicker?.mode !== 'move'"
+      :show-trash="categoryPicker?.mode !== 'move'"
       @update:model-value="(open) => !open && (categoryPicker = null)"
       @pick="onCategoryPicked"
+      @pick-trash="categoryPicker = null; selectTrash()"
     />
   </div>
 
@@ -211,7 +245,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, useTemplateRef, provide, reactive, nextTick } from 'vue'
-import { useDatabaseStore, parseDatabase, type Entry } from '@/stores/database'
+import { useDatabaseStore, parseDatabase, TRASH_RETENTION, type Entry } from '@/stores/database'
 import { useReposStore } from '@/stores/repos'
 import { debounce } from '@/utils/debounce'
 import { copySecret, CLIPBOARD_CLEAR_DELAY } from '@/utils/clipboard'
@@ -220,6 +254,7 @@ import { useMediaQuery, MOBILE_QUERY } from '@/composables/useMediaQuery'
 import { useCategoryState, type CategorySelection } from '@/composables/useCategoryState'
 import { isWithin, pathName, ENTRIES_DRAG_TYPE } from '@/utils/categories'
 import { CONFIRM_KEY, type ConfirmFn } from '@/composables/useConfirm'
+import { useTrashActions } from '@/composables/useTrashActions'
 import type { MenuAction } from '@/types/menu'
 
 import AppSidebar from '@/components/AppSidebar.vue'
@@ -230,6 +265,7 @@ import EntryDetailsSheet from '@/components/EntryDetailsSheet.vue'
 import CategoryPanel from '@/components/CategoryPanel.vue'
 import CategoryPickerSheet from '@/components/CategoryPickerSheet.vue'
 import EntryEditModal from '@/components/EntryEditModal.vue'
+import EntryHistoryModal from '@/components/EntryHistoryModal.vue'
 import EntryContextMenu from '@/components/EntryContextMenu.vue'
 import RepoSettingsModal from '@/components/RepoSettingsModal.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
@@ -241,6 +277,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 const AUTO_LOCK_TIMEOUT = 5 * 60 * 1000
 // localStorage key kept as-is so the saved theme survives the rename
 const THEME_STORAGE_KEY = 'bDarkTheme'
+const TRASH_DAYS = TRASH_RETENTION / (24 * 60 * 60 * 1000)
 
 const COLUMN_WIDTHS: Record<string, string> = {
   category: '120px',
@@ -258,14 +295,16 @@ const notifications = useTemplateRef('notifications')
 const tableScroll = useTemplateRef<HTMLElement>('tableScroll')
 const dataGrid = useTemplateRef<HTMLElement>('dataGrid')
 
-const notify: NotifyFn = (title, message, type, duration) => {
-  notifications.value?.show(title, message, type, duration)
+const notify: NotifyFn = (title, message, type, duration, action) => {
+  notifications.value?.show(title, message, type, duration, action)
 }
 provide(NOTIFY_KEY, notify)
 
 const confirmDialog = useTemplateRef('confirmDialog')
 const confirmAction: ConfirmFn = (options) => confirmDialog.value?.ask(options) ?? Promise.resolve(false)
 provide(CONFIRM_KEY, confirmAction)
+
+const { moveToTrash } = useTrashActions(notify)
 
 // --- local state ---
 const selectedEntry = ref<any>(null)
@@ -282,14 +321,19 @@ const isMobile = useMediaQuery(MOBILE_QUERY)
 const searchQuery = ref('')
 // Entry shown in the mobile details sheet
 const detailsEntry = ref<Entry | null>(null)
+// Entry whose history is shown
+const historyEntry = ref<Entry | null>(null)
 
 // --- categories ---
-const { selectOnly, effectiveSelection, effectiveSelections } = useCategoryState()
+const { selectOnly, selectTrash, trashSelected, effectiveSelection, effectiveSelections } = useCategoryState()
+// Deleted entries are listed instead of a category
+const isTrashView = computed(() => trashSelected.value)
 // Primary selected category: null = all, '' = uncategorized
 const activeCategory = computed(() => effectiveSelection(db.categoryPaths))
 // Every selected category the list is filtered by ([null] = all entries)
 const activeCategories = computed(() => effectiveSelections(db.categoryPaths))
 const categoryLabel = computed(() => {
+  if (isTrashView.value) return 'Trash'
   const categories = activeCategories.value
   if (categories.length > 1) return `${categories.length} categories`
   const category = categories[0]
@@ -354,7 +398,9 @@ function matchesSearch(entry: Entry, query: string): boolean {
 }
 
 const filteredRows = computed(() => {
-  let rows = table.value.data.filter(inActiveCategory)
+  let rows = isTrashView.value
+    ? db.trash.map((item) => item.entry)
+    : table.value.data.filter(inActiveCategory)
   if (isMobile.value) {
     // Column filters are not visible on mobile — use the search field only
     const query = searchQuery.value.trim().toLowerCase()
@@ -458,6 +504,14 @@ let anchorId: number | null = null
 watch(selectedEntry, (entry) => {
   if (!entry) selectedIds.value = new Set()
   else if (!selectedIds.value.has(entry.id)) selectedIds.value = new Set([entry.id])
+})
+
+// Drop selected rows that left the list (moved to or out of the trash, deleted, …)
+watch([() => table.value.data, () => db.trash, isTrashView], () => {
+  const listed = new Set(filteredRows.value.map((entry) => entry.id))
+  if ([...selectedIds.value].every((id) => listed.has(id))) return
+  selectedIds.value = new Set([...selectedIds.value].filter((id) => listed.has(id)))
+  if (selectedEntry.value && !listed.has(selectedEntry.value.id)) selectedEntry.value = null
 })
 
 /** Keyboard navigation works on a single row */
@@ -566,6 +620,8 @@ function selectPrev() {
 
 // --- entry actions ---
 function addEntry() {
+  // A new entry would be invisible in the trash
+  if (isTrashView.value) selectOnly(null)
   db.openEditWindow({})
 }
 
@@ -574,26 +630,73 @@ function notifyNoSelection() {
 }
 
 function editSelected() {
-  if (selectedEntry.value) {
+  if (isTrashView.value && selectedEntry.value) {
+    notify('Entry is in the trash', 'Restore it to edit', 'info')
+  } else if (selectedEntry.value) {
     db.openEditWindow(selectedEntry.value)
   } else {
     notifyNoSelection()
   }
 }
 
-/** Ask, then delete; resolves to true when the entry was deleted */
+/**
+ * Move an entry to the trash (no confirmation — it can be undone), or delete it for good
+ * when the trash is shown (asks first). Resolves to true when the entry was removed.
+ */
 async function deleteEntry(entry: any): Promise<boolean> {
   if (!entry) return false
+  if (isTrashView.value) return deleteForever([entry.id], entry.name)
+  moveToTrash([entry.id], entry.name)
+  return true
+}
+
+async function deleteForever(ids: number[], name?: string): Promise<boolean> {
   const confirmed = await confirmAction({
-    title: 'Delete entry',
-    message: entry.name ? `Delete "${entry.name}"?` : 'Delete this entry?',
-    confirmText: 'Delete',
+    title: 'Delete forever',
+    message: ids.length > 1
+      ? `Delete ${ids.length} entries for good? This cannot be undone.`
+      : `Delete ${name ? `"${name}"` : 'this entry'} for good? This cannot be undone.`,
+    confirmText: 'Delete forever',
     danger: true,
   })
   if (!confirmed) return false
-  db.removeEntry(entry)
-  if (selectedEntry.value?.id === entry.id) selectedEntry.value = null
+  db.deleteForever(ids)
   return true
+}
+
+function restoreEntries(ids: number[]) {
+  db.restoreFromTrash(ids)
+  notify(ids.length === 1 ? 'Entry restored' : `${ids.length} entries restored`, undefined, 'success', 2000)
+}
+
+async function emptyTrash() {
+  const count = db.trash.length
+  const confirmed = await confirmAction({
+    title: 'Empty trash',
+    message: `Delete ${count} ${count === 1 ? 'entry' : 'entries'} in the trash for good? This cannot be undone.`,
+    confirmText: 'Empty trash',
+    danger: true,
+  })
+  if (confirmed) db.emptyTrash()
+}
+
+function restoreFromDetails() {
+  const entry = detailsEntry.value
+  detailsEntry.value = null
+  if (entry) restoreEntries([entry.id!])
+}
+
+// --- history ---
+function restoreHistory(fields: Record<string, string>) {
+  const entry = historyEntry.value
+  if (!entry) return
+  db.restoreFields(entry.id!, fields)
+  notify('Restored', Object.keys(fields).length === 1 ? `${db.columns[Object.keys(fields)[0]]?.label ?? 'Field'} restored` : 'Previous version restored', 'success', 2000)
+}
+
+function clearHistory() {
+  const entry = historyEntry.value
+  if (entry) db.clearHistory(entry.id!)
 }
 
 function editFromDetails() {
@@ -609,15 +712,8 @@ async function deleteFromDetails() {
 async function deleteSelected() {
   const ids = [...selectedIds.value]
   if (ids.length > 1) {
-    const confirmed = await confirmAction({
-      title: 'Delete entries',
-      message: `Delete ${ids.length} selected entries?`,
-      confirmText: 'Delete',
-      danger: true,
-    })
-    if (!confirmed) return
-    db.removeEntries(ids)
-    selectedEntry.value = null
+    if (isTrashView.value) await deleteForever(ids)
+    else moveToTrash(ids)
   } else if (selectedEntry.value) {
     deleteEntry(selectedEntry.value)
   } else {
@@ -713,6 +809,7 @@ async function lockApp() {
   showChangePassword.value = false
   showMobileMenu.value = false
   detailsEntry.value = null
+  historyEntry.value = null
   categoryPicker.value = null
   searchQuery.value = ''
   try {
@@ -856,6 +953,28 @@ onUnmounted(() => {
   min-width: 0;
 }
 /* ===== Pagination ===== */
+.trash-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--c-border);
+  background: color-mix(in srgb, var(--c-danger) 6%, var(--c-bg-elevated));
+  flex-shrink: 0;
+}
+
+.trash-bar-icon {
+  flex-shrink: 0;
+  color: var(--c-danger);
+}
+
+.trash-bar-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--c-text-secondary);
+}
+
 .pagination-bar {
   display: flex;
   align-items: center;

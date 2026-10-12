@@ -26,6 +26,8 @@
         :selected="effectiveSelection(db.categoryPaths)"
         :selected-set="selectedSet"
         :expanded="expanded"
+        :trash-count="db.trash.length"
+        :trash-selected="trashSelected"
         manageable
         multi-select
         @select="selectOnly"
@@ -37,6 +39,8 @@
         @delete="deleteCategory"
         @move-entries="moveEntries"
         @move-categories="moveCategories"
+        @select-trash="selectTrash"
+        @trash-entries="moveToTrash"
       />
     </div>
 
@@ -57,6 +61,7 @@ import { useDatabaseStore } from '@/stores/database'
 import { useCategoryState, clampWidth } from '@/composables/useCategoryState'
 import { useNotify } from '@/composables/useNotify'
 import { useConfirm } from '@/composables/useConfirm'
+import { useTrashActions } from '@/composables/useTrashActions'
 import { parentPath, isWithin } from '@/utils/categories'
 import CategoryTree from './CategoryTree.vue'
 
@@ -64,11 +69,12 @@ const db = useDatabaseStore()
 const notify = useNotify()
 const confirmAction = useConfirm()
 const {
-  selectedSet, expanded, width, collapsed,
-  selectOnly, toggleSelection, selectRange,
+  selectedSet, expanded, width, collapsed, trashSelected,
+  selectOnly, selectTrash, toggleSelection, selectRange,
   toggleExpanded, reveal, followRename, followDelete, effectiveSelection,
 } = useCategoryState()
 const tree = useTemplateRef('tree')
+const { moveToTrash } = useTrashActions()
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)

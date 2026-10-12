@@ -7,8 +7,11 @@
       :selected="selected"
       :expanded="expanded"
       :show-all="showAll"
+      :trash-count="showTrash ? db.trash.length : undefined"
+      :trash-selected="showTrash && trashSelected"
       class="picker-tree"
       @select="pick"
+      @select-trash="pickTrash"
       @toggle="toggleExpanded"
     />
   </BaseModal>
@@ -25,17 +28,27 @@ withDefaults(defineProps<{
   selected: CategorySelection
   // "All" makes sense for filtering, not for moving an entry
   showAll?: boolean
-}>(), { showAll: true })
+  // Offer the trash (filtering only)
+  showTrash?: boolean
+}>(), { showAll: true, showTrash: false })
 
-const emit = defineEmits<{ (e: 'pick', path: CategorySelection): void }>()
+const emit = defineEmits<{
+  (e: 'pick', path: CategorySelection): void
+  (e: 'pick-trash'): void
+}>()
 const isOpen = defineModel<boolean>({ required: true })
 
 const db = useDatabaseStore()
-const { expanded, toggleExpanded } = useCategoryState()
+const { expanded, toggleExpanded, trashSelected } = useCategoryState()
 
 function pick(path: CategorySelection) {
   // Emit before closing: closing resets the parent's picker mode (filter / move)
   emit('pick', path)
+  isOpen.value = false
+}
+
+function pickTrash() {
+  emit('pick-trash')
   isOpen.value = false
 }
 </script>
