@@ -1,5 +1,5 @@
 <template>
-  <section v-if="types.length > 1 || typeFilter" class="type-filter" aria-label="Entry types">
+  <section v-if="types.length > 1 || typeFilter || expiringCount" class="type-filter" aria-label="Entry types">
     <div class="type-filter-title">Types</div>
     <ul class="type-filter-list" role="listbox" aria-label="Filter by type">
       <li
@@ -15,6 +15,19 @@
         <span class="type-row-name">{{ item.type.label }}</span>
         <span class="type-row-count">{{ item.count }}</span>
       </li>
+      <!-- Entries that expire soon or have expired, of any type -->
+      <li
+        v-if="expiringCount || typeFilter === EXPIRING_FILTER"
+        :class="['type-row', 'type-row--expiring', { 'type-row--selected': typeFilter === EXPIRING_FILTER }]"
+        role="option"
+        :aria-selected="typeFilter === EXPIRING_FILTER"
+        :data-type="EXPIRING_FILTER"
+        @click="pick(EXPIRING_FILTER)"
+      >
+        <div class="i-lucide-calendar-clock type-row-icon" />
+        <span class="type-row-name">Expiring</span>
+        <span class="type-row-count">{{ expiringCount }}</span>
+      </li>
     </ul>
   </section>
 </template>
@@ -23,7 +36,7 @@
 import { computed } from 'vue'
 import { useDatabaseStore } from '@/stores/database'
 import { useCategoryState } from '@/composables/useCategoryState'
-import { ENTRY_TYPES, entryType } from '@/types/entryTypes'
+import { ENTRY_TYPES, entryType, expiryStatus, EXPIRING_FILTER } from '@/types/entryTypes'
 
 const emit = defineEmits<{ (e: 'picked'): void }>()
 
@@ -41,6 +54,8 @@ const types = computed(() => {
     .filter((type) => counts.has(type.id) || typeFilter.value === type.id)
     .map((type) => ({ type, count: counts.get(type.id) ?? 0 }))
 })
+
+const expiringCount = computed(() => db.table.data.filter((entry) => expiryStatus(entry)).length)
 
 function pick(type: string) {
   toggleType(type)
@@ -100,6 +115,10 @@ function pick(type: string) {
 }
 .type-row--selected .type-row-icon {
   color: var(--c-accent);
+}
+
+.type-row--expiring .type-row-icon {
+  color: var(--c-warning);
 }
 
 .type-row-name {

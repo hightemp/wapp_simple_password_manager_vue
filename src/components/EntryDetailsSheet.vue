@@ -8,6 +8,9 @@
     <dl v-if="entry" class="details">
       <div class="details-type">
         <div :class="type.icon" /> {{ type.label }}
+        <span v-if="expiry" :class="['details-expiry', `details-expiry--${expiry.status}`]">
+          <ExpiryBadge :entry="entry" /> {{ expiry.text }}
+        </span>
       </div>
       <div v-if="actions.length && !inTrash" class="details-actions-row">
         <button v-for="action in actions" :key="action.id" class="action-btn action-btn--ghost action-btn--sm" @click="emit('action', action.id)">
@@ -89,9 +92,10 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 import type { Entry } from '@/stores/database'
-import { entryType, entryFields, isSecretKind, formatDate, type FieldDef } from '@/types/entryTypes'
+import { entryType, entryFields, isSecretKind, formatDate, expiryDate, expiryStatus, type FieldDef } from '@/types/entryTypes'
 import { formatCardNumber } from '@/utils/card'
 import RecoveryCodes from './RecoveryCodes.vue'
+import ExpiryBadge from './ExpiryBadge.vue'
 import BaseModal from './BaseModal.vue'
 
 const props = defineProps<{
@@ -116,6 +120,13 @@ const emit = defineEmits<{
 const type = computed(() => entryType(props.entry))
 // Fields of the entry except Name (it is the sheet title)
 const fields = computed(() => (props.entry ? entryFields(props.entry, type.value) : []))
+
+const expiry = computed(() => {
+  const status = props.entry && expiryStatus(props.entry)
+  if (!status) return null
+  const date = expiryDate(props.entry!)!.toLocaleDateString()
+  return { status, text: status === 'expired' ? `Expired on ${date}` : `Expires on ${date}` }
+})
 
 const actions = computed(() =>
   props.entry ? (type.value.actions ?? []).filter((action) => action.available(props.entry!)) : []
@@ -158,6 +169,20 @@ function href(field: FieldDef): string {
   font-size: var(--text-sm);
   color: var(--c-accent);
   font-weight: 600;
+}
+
+.details-expiry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-weight: 500;
+}
+.details-expiry--soon {
+  color: var(--c-warning);
+}
+.details-expiry--expired {
+  color: var(--c-danger);
 }
 
 .details-actions-row {

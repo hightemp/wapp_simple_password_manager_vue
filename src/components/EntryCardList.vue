@@ -23,6 +23,7 @@
         <div class="entry-card-title-row">
           <div :class="[entryType(entry).icon, 'entry-card-type']" :title="entryType(entry).label" />
           <span class="entry-card-name">{{ entry.name || '(no name)' }}</span>
+          <ExpiryBadge :entry="entry" />
           <span v-if="entry.category" class="entry-card-category">{{ entry.category }}</span>
         </div>
         <span v-if="entryType(entry).details(entry)" class="entry-card-login">{{ entryType(entry).details(entry) }}</span>
@@ -46,6 +47,7 @@
 <script setup lang="ts">
 import type { Entry } from '@/stores/database'
 import { entryType, describeField, copyIcon } from '@/types/entryTypes'
+import ExpiryBadge from './ExpiryBadge.vue'
 
 defineProps<{
   entries: Entry[]

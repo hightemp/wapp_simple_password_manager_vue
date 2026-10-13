@@ -43,7 +43,7 @@ Screenshots use fictional demo data and are regenerated with `npm run screenshot
 - **Password generator** — configurable length, character sets, strength indicator
 - **Password masking** — passwords hidden in table, reveal on demand with auto-hide
 - **Clipboard copy** — one-click copy for logins, passwords and any other field
-- **Entry types** — logins, API keys, payment cards, secure notes, identities, addresses, documents, Wi-Fi networks, servers and recovery codes, each with its own fields; custom fields on any entry
+- **Entry types** — logins, API keys, payment cards, secure notes, identities, addresses, documents, Wi-Fi networks, servers, recovery codes, bank accounts, databases, crypto wallets and software licenses, each with its own fields; custom fields on any entry; reminders about expiring cards, keys, documents and licenses
 - **Entry history** — previous values of every field (last 20 changes per entry), restore a whole version or a single field
 - **Trash** — deleted entries can be restored for 30 days
 - **Import/Export** — backup and restore your database as JSON
@@ -59,7 +59,7 @@ Screenshots use fictional demo data and are regenerated with `npm run screenshot
 - **Vite 6** — fast builds with HMR
 - **UnoCSS** — atomic CSS with custom design tokens
 - **Lucide Icons** — clean, consistent icon set
-- **Vitest** — 228 unit tests (crypto, stores, merge, backups, FileSystemDriver, Google Drive client, password strength)
+- **Vitest** — 232 unit tests (crypto, stores, merge, backups, FileSystemDriver, Google Drive client, password strength)
 - **Web Crypto API** — native browser encryption (AES-256-GCM + PBKDF2)
 - **crypto-js** — only for reading legacy (v1/v2) database files
 
@@ -137,8 +137,13 @@ Every entry has a type that decides its fields. The table shows all types in the
 | Wi-Fi | Network name, Password 🔒, Security, Hidden network, Notes | Password |
 | Server / SSH | Host, Port, Username, Password 🔒, Private key 🔒, Key passphrase 🔒, Notes | Password |
 | Recovery Codes | Codes 🔒 (one per line), Notes | Codes |
+| Bank Account | Bank, Account holder, Account / IBAN, BIC / SWIFT, Correspondent account, Tax ID, Notes | — |
+| Database | Kind (PostgreSQL, MySQL, MongoDB, Redis, …), Host, Port, Database, Username, Password 🔒, Notes | Password |
+| Crypto Wallet | Wallet app, Network, Address, Seed phrase 🔒, Password / PIN 🔒, Notes | Password / PIN (the seed phrase is never shown in the list) |
+| Software License | License key 🔒, Licensed to, Email, Version, Purchase date, Valid until, Download URL, Notes | License key |
 
-- **Type actions** (row context menu, entry details on a phone): **Copy address** in one line, **Show QR code** for a Wi-Fi network (phone cameras join it), **Copy ssh command** (`ssh -p 2222 user@host`)
+- **Type actions** (row context menu, entry details on a phone): **Copy address** in one line, **Show QR code** for a Wi-Fi network (phone cameras join it), **Copy ssh command** (`ssh -p 2222 user@host`), **Copy connection string** (`postgresql://user:pass@host:5432/db`), **Copy bank details** (labelled lines)
+- **Expiry reminders** — API keys, cards, documents and licenses with an expiry date get a badge 30 days before it (amber) and after it (red); **Expiring** in the type filter lists them, and after unlocking a toast tells how many there are
 - **Recovery codes** — once shown, every code has a checkbox to mark it as used (it is crossed out; the list shows "4 of 6 unused") and a copy button
 - Card numbers are grouped as you type, the card brand is detected and a typo in the number (Luhn checksum) is pointed out; the expiry date is formatted as MM/YY
 - **Custom fields** — **Add field** in the form adds a field to one entry: give it a name and a kind (text, secret, multi-line text, URL, email, phone, date); fields can be reordered and removed

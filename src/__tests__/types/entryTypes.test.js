@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { entryType, entryFields, describeField, mainSecret, entryUrl, ENTRY_TYPES, wifiQrText, sshCommand, isSecretKind } from '../../types/entryTypes'
+import { entryType, entryFields, describeField, mainSecret, entryUrl, ENTRY_TYPES, wifiQrText, sshCommand, isSecretKind, connectionString, bankDetails, expiryDate, expiryStatus } from '../../types/entryTypes'
 
 describe('entry types', () => {
   it('should treat entries without a type as logins', () => {
@@ -64,5 +64,34 @@ describe('entry types', () => {
     expect(address.copy({ street: 'Pine St', building: '12', city: 'Seattle', postal_code: '98101', country: 'USA' }))
       .toBe('Pine St 12, Seattle, 98101, USA')
     expect(address.available({})).toBe(false)
+  })
+
+  it('should build database connection strings', () => {
+    expect(connectionString({ db_kind: 'PostgreSQL', host: 'db.local', port: '5432', database: 'app', login: 'admin', password: 'p@ss:word' }))
+      .toBe('postgresql://admin:p%40ss%3Aword@db.local:5432/app')
+    expect(connectionString({ db_kind: 'Redis', host: 'cache' })).toBe('redis://cache')
+  })
+
+  it('should copy bank details as labelled lines', () => {
+    expect(bankDetails({ bank: 'Chase', account_number: 'DE89 3704', bic: 'CHASUS33', description: 'skip' }))
+      .toBe('Bank: Chase\nAccount / IBAN: DE89 3704\nBIC / SWIFT: CHASUS33')
+    expect(entryType({ type: 'bank_account' }).details({ bank: 'Chase', account_number: 'DE89 3704 0044' })).toBe('Chase · •••• 0044')
+  })
+
+  it('should never show the seed phrase of a wallet in the list', () => {
+    const wallet = { type: 'crypto_wallet', seed_phrase: 'abandon abandon', password: '1234', address: '0x1234567890abcdef1234' }
+    expect(mainSecret(wallet).key).toBe('password')
+    expect(entryType(wallet).details({ ...wallet, network: 'Ethereum' })).toBe('Ethereum · 0x1234…1234')
+  })
+
+  it('should read expiry dates and report expiring entries', () => {
+    const now = new Date(2026, 9, 13)
+    expect(expiryDate({ type: 'card', card_expiry: '02/28' })).toEqual(new Date(2028, 1, 29))
+    expect(expiryDate({ type: 'login', expires: '2026-10-20' })).toBeNull()
+    expect(expiryStatus({ type: 'api_key', expires: '2026-10-20' }, now)).toBe('soon')
+    expect(expiryStatus({ type: 'document', expiry_date: '2026-10-12' }, now)).toBe('expired')
+    expect(expiryStatus({ type: 'license', expires: '2026-12-31' }, now)).toBeNull()
+    expect(expiryStatus({ type: 'card', card_expiry: '10/26' }, now)).toBe('soon')
+    expect(expiryStatus({ type: 'card', card_expiry: '13/26' }, now)).toBeNull()
   })
 })

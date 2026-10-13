@@ -71,6 +71,8 @@ export interface EntryTypeDef {
   // Show the password generator in the form (it fills `password`)
   generator?: boolean
   actions?: TypeAction[]
+  // Field with the date the entry stops being valid (for expiry reminders)
+  expiry?: string
 }
 
 export const DEFAULT_TYPE = 'login'
@@ -112,6 +114,7 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
     ],
     secret: 'api_key',
     url: 'url',
+    expiry: 'expires',
     quickCopy: ['api_key'],
     details: (entry) => join([entry.environment, entry.expires && `until ${formatDate(entry.expires)}`]),
   },
@@ -130,6 +133,7 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
       NOTES,
     ],
     secret: 'card_number',
+    expiry: 'card_expiry',
     quickCopy: ['card_number'],
     details: (entry) => join([
       join([cardBrand(entry.card_number ?? ''), entry.card_number && `•••• ${lastFour(entry.card_number)}`], ' '),
@@ -200,6 +204,7 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
       NOTES,
     ],
     secret: 'doc_number',
+    expiry: 'expiry_date',
     quickCopy: ['doc_number'],
     details: (entry) => join([entry.doc_kind, entry.expiry_date && `until ${formatDate(entry.expiry_date)}`]),
   },
@@ -266,7 +271,124 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
       return total ? `${unused} of ${total} unused` : ''
     },
   },
+  {
+    id: 'bank_account',
+    label: 'Bank Account',
+    icon: 'i-lucide-landmark',
+    fields: [
+      { key: 'bank', label: 'Bank', kind: 'text' },
+      { key: 'account_holder', label: 'Account holder', kind: 'text' },
+      { key: 'account_number', label: 'Account / IBAN', kind: 'text' },
+      { key: 'bic', label: 'BIC / SWIFT', kind: 'text' },
+      { key: 'corr_account', label: 'Correspondent account', kind: 'text' },
+      { key: 'tax_id', label: 'Tax ID', kind: 'text' },
+      NOTES,
+    ],
+    quickCopy: ['account_number', 'bic'],
+    details: (entry) => join([entry.bank, entry.account_number && `•••• ${String(entry.account_number).replace(/\s/g, '').slice(-4)}`]),
+    actions: [{
+      id: 'copy-bank-details',
+      label: 'Copy bank details',
+      icon: 'i-lucide-clipboard-copy',
+      copy: bankDetails,
+      available: (entry) => Boolean(entry.account_number || entry.bic),
+    }],
+  },
+  {
+    id: 'database',
+    label: 'Database',
+    icon: 'i-lucide-database',
+    fields: [
+      { key: 'db_kind', label: 'Kind', kind: 'select', options: ['PostgreSQL', 'MySQL / MariaDB', 'MongoDB', 'Redis', 'SQL Server', 'Oracle', 'SQLite', 'Other'] },
+      { key: 'host', label: 'Host', kind: 'text' },
+      { key: 'port', label: 'Port', kind: 'text' },
+      { key: 'database', label: 'Database', kind: 'text' },
+      { key: 'login', label: 'Username', kind: 'text' },
+      { key: 'password', label: 'Password', kind: 'secret' },
+      NOTES,
+    ],
+    secret: 'password',
+    quickCopy: ['host', 'password'],
+    details: (entry) => join([entry.db_kind, entry.host && `${entry.login ? entry.login + '@' : ''}${entry.host}${entry.port ? ':' + entry.port : ''}${entry.database ? '/' + entry.database : ''}`]),
+    generator: true,
+    actions: [{
+      id: 'copy-connection',
+      label: 'Copy connection string',
+      icon: 'i-lucide-link',
+      copy: connectionString,
+      available: (entry) => Boolean(entry.host),
+    }],
+  },
+  {
+    id: 'crypto_wallet',
+    label: 'Crypto Wallet',
+    icon: 'i-lucide-wallet',
+    fields: [
+      { key: 'wallet', label: 'Wallet app', kind: 'text' },
+      { key: 'network', label: 'Network', kind: 'text', placeholder: 'Bitcoin, Ethereum…' },
+      { key: 'address', label: 'Address', kind: 'text' },
+      { key: 'seed_phrase', label: 'Seed phrase', kind: 'secret_multiline' },
+      { key: 'password', label: 'Password / PIN', kind: 'secret' },
+      NOTES,
+    ],
+    // The seed phrase is never shown in the list
+    secret: 'password',
+    quickCopy: ['address'],
+    details: (entry) => join([entry.network, shortAddress(entry.address)]),
+  },
+  {
+    id: 'license',
+    label: 'Software License',
+    icon: 'i-lucide-badge-check',
+    fields: [
+      { key: 'license_key', label: 'License key', kind: 'secret' },
+      { key: 'licensed_to', label: 'Licensed to', kind: 'text' },
+      { key: 'email', label: 'Email', kind: 'email' },
+      { key: 'version', label: 'Version', kind: 'text' },
+      { key: 'purchase_date', label: 'Purchase date', kind: 'date' },
+      { key: 'expires', label: 'Valid until', kind: 'date' },
+      { key: 'url', label: 'Download URL', kind: 'url' },
+      NOTES,
+    ],
+    secret: 'license_key',
+    url: 'url',
+    expiry: 'expires',
+    quickCopy: ['license_key'],
+    details: (entry) => join([entry.version, entry.expires && `until ${formatDate(entry.expires)}`]),
+  },
 ]
+
+const DATABASE_SCHEMES: Record<string, string> = {
+  'PostgreSQL': 'postgresql',
+  'MySQL / MariaDB': 'mysql',
+  'MongoDB': 'mongodb',
+  'Redis': 'redis',
+  'SQL Server': 'sqlserver',
+  'Oracle': 'oracle',
+}
+
+/** Connection URL of a database entry, e.g. postgresql://user:pass@host:5432/app */
+export function connectionString(entry: Values): string {
+  const scheme = DATABASE_SCHEMES[entry.db_kind] ?? 'db'
+  const credentials = entry.login
+    ? encodeURIComponent(entry.login) + (entry.password ? ':' + encodeURIComponent(entry.password) : '') + '@'
+    : ''
+  return `${scheme}://${credentials}${entry.host ?? ''}${entry.port ? ':' + entry.port : ''}${entry.database ? '/' + entry.database : ''}`
+}
+
+/** Bank details as lines "Label: value" for pasting into a payment form or a message */
+export function bankDetails(entry: Values): string {
+  const type = TYPES_BY_ID.get('bank_account')!
+  return type.fields
+    .filter((field) => field.key !== 'description' && entry[field.key])
+    .map((field) => `${field.label}: ${entry[field.key]}`)
+    .join('\n')
+}
+
+/** 0x12ab…cd34 — enough to recognize an address */
+function shortAddress(address: string): string {
+  return address && address.length > 14 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address ?? ''
+}
 
 /** Text of a Wi-Fi QR code (the format phone cameras understand) */
 export function wifiQrText(entry: Values): string {
@@ -352,6 +474,10 @@ const COPY_ICONS: Record<string, string> = {
   ssid: 'i-lucide-wifi',
   host: 'i-lucide-server',
   doc_number: 'i-lucide-file-badge',
+  account_number: 'i-lucide-landmark',
+  bic: 'i-lucide-building-2',
+  address: 'i-lucide-wallet',
+  license_key: 'i-lucide-badge-check',
 }
 
 /** Icon of a quick-copy button */
@@ -374,4 +500,34 @@ export function toCustomKind(kind: FieldKind): CustomFieldKind {
     case 'codes': return 'secret_multiline'
     default: return kind
   }
+}
+
+// Type filter value that lists expiring and expired entries
+export const EXPIRING_FILTER = 'expiring'
+
+// Entries expiring within this many days are reminded about
+export const EXPIRY_WARNING_DAYS = 30
+
+/** Last valid day of an entry, or null (YYYY-MM-DD dates, or MM/YY = end of that month) */
+export function expiryDate(entry: Values): Date | null {
+  const key = entryType(entry).expiry
+  const value = key ? String(entry[key] ?? '').trim() : ''
+  let match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  match = value.match(/^(\d{1,2})\/(\d{2})$/)
+  if (match && Number(match[1]) >= 1 && Number(match[1]) <= 12) {
+    // Day 0 of the next month = last day of this one
+    return new Date(2000 + Number(match[2]), Number(match[1]), 0)
+  }
+  return null
+}
+
+/** 'expired', 'soon' (within EXPIRY_WARNING_DAYS) or null */
+export function expiryStatus(entry: Values, now = new Date()): 'expired' | 'soon' | null {
+  const date = expiryDate(entry)
+  if (!date) return null
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const days = Math.round((date.getTime() - today.getTime()) / 86_400_000)
+  if (days < 0) return 'expired'
+  return days <= EXPIRY_WARNING_DAYS ? 'soon' : null
 }

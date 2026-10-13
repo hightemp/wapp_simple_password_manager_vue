@@ -142,6 +142,7 @@
                 <div class="cell-name">
                   <div :class="[entryType(row).icon, 'cell-type-icon']" :title="entryType(row).label" />
                   <span class="cell-text">{{ row.name }}</span>
+                  <ExpiryBadge :entry="row" />
                 </div>
               </div>
               <!-- Details: the type's summary, with a copy button for its main value -->
@@ -273,7 +274,7 @@ import { isWithin, pathName, ENTRIES_DRAG_TYPE } from '@/utils/categories'
 import { CONFIRM_KEY, type ConfirmFn } from '@/composables/useConfirm'
 import { useTrashActions } from '@/composables/useTrashActions'
 import type { MenuAction } from '@/types/menu'
-import { entryType, mainSecret, entryUrl, describeField, DEFAULT_TYPE } from '@/types/entryTypes'
+import { entryType, mainSecret, entryUrl, describeField, expiryStatus, DEFAULT_TYPE, EXPIRING_FILTER, EXPIRY_WARNING_DAYS } from '@/types/entryTypes'
 import { formatCardNumber } from '@/utils/card'
 
 import AppSidebar from '@/components/AppSidebar.vue'
@@ -287,6 +288,7 @@ import EntryEditModal from '@/components/EntryEditModal.vue'
 import EntryTypePicker from '@/components/EntryTypePicker.vue'
 import EntryHistoryModal from '@/components/EntryHistoryModal.vue'
 import QrCodeModal from '@/components/QrCodeModal.vue'
+import ExpiryBadge from '@/components/ExpiryBadge.vue'
 import EntryContextMenu from '@/components/EntryContextMenu.vue'
 import RepoSettingsModal from '@/components/RepoSettingsModal.vue'
 import CreateDatabaseModal from '@/components/CreateDatabaseModal.vue'
@@ -359,7 +361,7 @@ const activeCategory = computed(() => effectiveSelection(db.categoryPaths))
 // Every selected category the list is filtered by ([null] = all entries)
 const activeCategories = computed(() => effectiveSelections(db.categoryPaths))
 const categoryLabel = computed(() => {
-  const type = typeFilter.value && entryType({ type: typeFilter.value }).label
+  const type = typeFilter.value === EXPIRING_FILTER ? 'Expiring' : typeFilter.value && entryType({ type: typeFilter.value }).label
   return type ? `${placeLabel.value} · ${type}` : placeLabel.value
 })
 const placeLabel = computed(() => {
@@ -448,7 +450,8 @@ const filteredRows = computed(() => {
   let rows = isTrashView.value
     ? db.trash.map((item) => item.entry)
     : table.value.data.filter(inActiveCategory)
-  if (typeFilter.value) rows = rows.filter((entry) => entryType(entry).id === typeFilter.value)
+  if (typeFilter.value === EXPIRING_FILTER) rows = rows.filter((entry) => expiryStatus(entry))
+  else if (typeFilter.value) rows = rows.filter((entry) => entryType(entry).id === typeFilter.value)
   if (isMobile.value) {
     // Column filters are not visible on mobile — use the search field only
     const query = searchQuery.value.trim().toLowerCase()
@@ -551,6 +554,21 @@ const selectedIds = ref(new Set<number>())
 let anchorId: number | null = null
 
 // Any single selection (keyboard, context menu, …) replaces the multi-selection
+// After unlocking, remind about entries that expire soon or have expired
+watch(() => db.isLoading, (loading, wasLoading) => {
+  if (loading || !wasLoading || db.isRepoWindowOpen || !db.masterPassword) return
+  const expiring = db.table.data.filter((entry) => expiryStatus(entry))
+  if (!expiring.length) return
+  const expired = expiring.filter((entry) => expiryStatus(entry) === 'expired').length
+  notify(
+    `${expiring.length} ${expiring.length === 1 ? 'entry expires' : 'entries expire'} soon`,
+    expired ? `${expired} already expired` : `Within ${EXPIRY_WARNING_DAYS} days`,
+    'info',
+    10000,
+    { label: 'Show', run: () => { selectOnly(null); typeFilter.value = EXPIRING_FILTER } },
+  )
+})
+
 watch(selectedEntry, (entry) => {
   if (!entry) selectedIds.value = new Set()
   else if (!selectedIds.value.has(entry.id)) selectedIds.value = new Set([entry.id])
@@ -671,7 +689,7 @@ function selectPrev() {
 // --- entry actions ---
 /** Ask for the type of the new entry (or use the type the list is filtered by) */
 function addEntry() {
-  if (typeFilter.value) newEntry(typeFilter.value)
+  if (typeFilter.value && typeFilter.value !== EXPIRING_FILTER) newEntry(typeFilter.value)
   else showTypePicker.value = true
 }
 
