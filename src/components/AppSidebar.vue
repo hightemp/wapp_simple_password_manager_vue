@@ -22,6 +22,9 @@
       <button class="sidebar-btn" title="Import" aria-label="Import" @click="emit('action', 'import')">
         <div class="i-lucide-upload" />
       </button>
+      <button class="sidebar-btn" title="Import from another app" aria-label="Import from another app" @click="emit('action', 'import-other')">
+        <div class="i-lucide-file-input" />
+      </button>
     </div>
 
     <div class="sidebar-spacer" />

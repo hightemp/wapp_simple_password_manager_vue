@@ -8,6 +8,7 @@ export type MenuAction =
   | 'remove'
   | 'export'
   | 'import'
+  | 'import-other'
   | 'shortcuts'
   | 'toggle-theme'
   | 'lock'

@@ -1114,6 +1114,20 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
     await expect(page.locator('.entry-card:has-text("Codes")')).toContainText('1 of 2 unused')
   })
 
+  test('should import from another app via the More menu', async ({ page }) => {
+    await page.locator('.bottom-nav [aria-label="More"]').click()
+    await page.locator('.menu-item:has-text("Import from another app")').click()
+    const wizard = page.locator('.modal-panel:has-text("Import from another app")')
+    await wizard.locator('input[type="file"]').setInputFiles({
+      name: 'Passwords.csv', mimeType: 'text/csv',
+      buffer: Buffer.from('Title,URL,Username,Password,Notes,OTPAuth\nBank,https://bank,me,pw,,\n'),
+    })
+    await expect(wizard.locator('select').first()).toHaveValue('safari-csv')
+    await wizard.locator('button:has-text("Import 1 entry")').click()
+    await expect(page.locator('.entry-card:has-text("Bank")')).toContainText('Imported/Safari')
+    await expectNoHorizontalScroll(page)
+  })
+
   test('should show history and restore from the trash', async ({ page }) => {
     await addEntry(page, { name: 'Phone Site', password: 'first-pass' })
 
@@ -1702,6 +1716,64 @@ test.describe('Entry types', () => {
     // Selecting it again shows all types
     await types.locator('.type-row[data-type="identity"]').click()
     await expect(rows(page)).toHaveCount(2)
+  })
+})
+
+test.describe('Import from another app', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+  })
+
+  const rows = (page: Page) => page.locator('.grid-row:not(.grid-header)')
+  const CHROME_CSV = 'name,url,username,password,note\nGitHub,https://github.com,me,p1,code\nMail,https://mail.example.com,me@mail,p2,\n'
+
+  async function importFile(page: Page, name: string, content: string) {
+    await page.locator('.sidebar-btn[aria-label="Import from another app"]').click()
+    const wizard = page.locator('.modal-panel:has-text("Import from another app")')
+    await wizard.locator('input[type="file"]').setInputFiles({ name, mimeType: 'text/csv', buffer: Buffer.from(content) })
+    return wizard
+  }
+
+  test('should import a browser CSV into its own category, skip duplicates and undo', async ({ page }) => {
+    const wizard = await importFile(page, 'Chrome Passwords.csv', CHROME_CSV)
+    await expect(wizard.locator('select').first()).toHaveValue('chrome-csv')
+    await expect(wizard.locator('.import-chip')).toHaveText(/2 Login/)
+    await expect(wizard.locator('input[placeholder="(top level)"]')).toHaveValue('Imported/Browser')
+    await expect(wizard.locator('.import-item')).toHaveCount(2)
+    await wizard.locator('button:has-text("Import 2 entries")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+
+    const toast = page.locator('.notification:has-text("Imported 2 entries from Browser")')
+    await expect(toast).toContainText('Chrome Passwords.csv')
+    await expect(rows(page)).toHaveCount(2)
+    await expect(page.locator('.cat-row[data-path="Imported"] .cat-count')).toHaveText('2')
+
+    // The same file again: everything is already there
+    const again = await importFile(page, 'Chrome Passwords.csv', CHROME_CSV)
+    await expect(again.locator('.import-duplicates')).toContainText('2 entries are already in the database')
+    await expect(again.locator('button:has-text("Import 0 entries")')).toBeDisabled()
+    await again.locator('.import-duplicates input').check()
+    await expect(again.locator('button:has-text("Import 2 entries")')).toBeEnabled()
+    await again.locator('button:has-text("Cancel")').click()
+
+    await toast.locator('.notification-action').click()
+    await expect(rows(page)).toHaveCount(0)
+  })
+
+  test('should map columns of an unknown CSV', async ({ page }) => {
+    const wizard = await importFile(page, 'export.csv', 'Site,E-mail,Pass,Folder\nBank,me@x,pw,Money\n')
+    await expect(wizard.locator('select').first()).toHaveValue('generic-csv')
+    await expect(wizard.locator('[aria-label="Password column"]')).toHaveValue('2')
+    await wizard.locator('input[placeholder="(top level)"]').fill('')
+    await wizard.locator('button:has-text("Import 1 entry")').click()
+    await expect(page.locator('.cat-row[data-path="Money"]')).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('me@x')
+  })
+
+  test('should explain files that are not exports', async ({ page }) => {
+    const wizard = await importFile(page, 'db.json', '{"table":{"data":[]}}')
+    await expect(wizard.locator('.import-error')).toContainText('Import database')
   })
 })
 

@@ -21,6 +21,7 @@ const isOpen = defineModel<boolean>({ required: true })
 const items = computed<{ action: MenuAction; label: string; icon: string }[]>(() => [
   { action: 'export', label: 'Export database', icon: 'i-lucide-download' },
   { action: 'import', label: 'Import database', icon: 'i-lucide-upload' },
+  { action: 'import-other', label: 'Import from another app', icon: 'i-lucide-file-input' },
   { action: 'change-password', label: 'Change master password', icon: 'i-lucide-key-round' },
   { action: 'toggle-theme', label: props.isDarkTheme ? 'Light theme' : 'Dark theme', icon: props.isDarkTheme ? 'i-lucide-sun' : 'i-lucide-moon' },
   { action: 'lock', label: 'Lock', icon: 'i-lucide-lock' },

@@ -47,6 +47,7 @@ Screenshots use fictional demo data and are regenerated with `npm run screenshot
 - **Entry history** — previous values of every field (last 20 changes per entry), restore a whole version or a single field
 - **Trash** — deleted entries can be restored for 30 days
 - **Import/Export** — backup and restore your database as JSON
+- **Import from other apps** — Chrome/Edge/Firefox/Safari, Bitwarden, KeePass/KeePassXC, 1Password and LastPass exports, or any CSV
 - **Keyboard shortcuts** — `Ctrl+S` save, `Ctrl+N` new login
 - **Responsive design** — works on desktop, tablet, and mobile
 - **URL sharing** — share repository config via URL parameters
@@ -59,7 +60,7 @@ Screenshots use fictional demo data and are regenerated with `npm run screenshot
 - **Vite 6** — fast builds with HMR
 - **UnoCSS** — atomic CSS with custom design tokens
 - **Lucide Icons** — clean, consistent icon set
-- **Vitest** — 232 unit tests (crypto, stores, merge, backups, FileSystemDriver, Google Drive client, password strength)
+- **Vitest** — 255 unit tests (crypto, stores, merge, backups, FileSystemDriver, Google Drive client, password strength)
 - **Web Crypto API** — native browser encryption (AES-256-GCM + PBKDF2)
 - **crypto-js** — only for reading legacy (v1/v2) database files
 
@@ -120,6 +121,29 @@ Click **Connect** to unlock the database. Then:
 - **Save** — persist changes to the repository
 - **Filter** — type in any column header to filter entries
 - **Copy** — click the copy icon in the Details and Secret cells or next to any field in the form (the clipboard is cleared after 30 s)
+
+### Import from another app
+
+The **Import from another app** button in the sidebar (on a phone: **More** menu) adds entries from another password manager's export to the open database. The file is read only in the browser.
+
+| App | Export file | What is imported |
+|-----|-------------|------------------|
+| Chrome, Edge, Brave, Opera | CSV (Settings → Passwords → Export) | Logins |
+| Firefox | CSV (about:logins → ⋯ → Export logins) | Logins |
+| Safari / Apple Passwords | CSV (File → Export All Passwords) | Logins |
+| Bitwarden | JSON (not encrypted) or CSV | Logins, notes, cards, identities (+ address), SSH keys, folders, custom fields |
+| KeePass 2 | XML (File → Export → KeePass XML 2.x) | Entries, group tree, custom strings (protected ones as secrets) |
+| KeePassXC | CSV (Database → Export → CSV) | Entries and groups |
+| 1Password | 1PUX (unencrypted export) or CSV | All item types of the 1PUX (logins, cards, notes, identities, bank accounts, databases, servers, Wi-Fi, licenses, documents, wallets…), vaults |
+| LastPass | CSV | Logins, secure notes, folders |
+| Anything else | CSV with a header row | You choose which column is the name, login, password, URL, notes and category; other columns become custom fields |
+
+- The format is detected from the file; a preview shows the counts by type, the target categories and any warnings
+- Entries go to **Imported/&lt;app&gt;** (the app's folders become subcategories); the prefix can be changed or cleared
+- Entries that are already in the database (same type and values) are skipped unless you tick the box
+- TOTP secrets are kept as a secret custom field named **TOTP**
+- The toast after importing has an **Undo** button; delete the export file afterwards — it holds your passwords in plain text
+- An encrypted KeePass database (.kdbx) can't be read directly — export it as XML or CSV first
 
 ### Entry types
 

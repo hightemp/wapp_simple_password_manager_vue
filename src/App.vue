@@ -251,6 +251,7 @@
   <input type="file" ref="importInput" class="sr-only" @change="importDatabase" />
 
   <EntryTypePicker v-model="showTypePicker" @pick="newEntry" />
+  <ImportWizardModal v-model="showImportWizard" @imported="onImported" />
   <EntryEditModal />
   <RepoSettingsModal />
   <CreateDatabaseModal />
@@ -286,6 +287,7 @@ import CategoryPanel from '@/components/CategoryPanel.vue'
 import CategoryPickerSheet from '@/components/CategoryPickerSheet.vue'
 import EntryEditModal from '@/components/EntryEditModal.vue'
 import EntryTypePicker from '@/components/EntryTypePicker.vue'
+import ImportWizardModal from '@/components/ImportWizardModal.vue'
 import EntryHistoryModal from '@/components/EntryHistoryModal.vue'
 import QrCodeModal from '@/components/QrCodeModal.vue'
 import ExpiryBadge from '@/components/ExpiryBadge.vue'
@@ -341,6 +343,7 @@ const showShortcuts = ref(false)
 const showChangePassword = ref(false)
 const showMobileMenu = ref(false)
 const showTypePicker = ref(false)
+const showImportWizard = ref(false)
 
 // Mobile layout: card list with a single search field instead of the table
 const isMobile = useMediaQuery(MOBILE_QUERY)
@@ -783,6 +786,28 @@ async function runAction(entry: Entry | null, id: string) {
   }
 }
 
+// --- import from other apps ---
+function openImportWizard() {
+  if (!db.masterPassword) {
+    notify('Not connected', 'Connect to a repository first', 'error')
+    return
+  }
+  showImportWizard.value = true
+}
+
+function onImported(ids: number[], source: string, fileName: string) {
+  // Show where the entries went
+  selectOnly(null)
+  typeFilter.value = null
+  notify(
+    `Imported ${ids.length} ${ids.length === 1 ? 'entry' : 'entries'} from ${source}`,
+    `Press Save to store them. Then delete "${fileName}" — it holds your passwords in plain text.`,
+    'success',
+    12000,
+    { label: 'Undo', run: () => db.discardEntries(ids) },
+  )
+}
+
 // --- history ---
 function restoreHistory(fields: Record<string, string>) {
   const entry = historyEntry.value
@@ -929,6 +954,7 @@ function onMenuAction(action: MenuAction) {
     case 'remove': deleteSelected(); break
     case 'export': db.exportDatabase(); break
     case 'import': importInput.value?.click(); break
+    case 'import-other': openImportWizard(); break
     case 'shortcuts': showShortcuts.value = true; break
     case 'toggle-theme': toggleTheme(); break
     case 'more': showMobileMenu.value = true; break
@@ -953,6 +979,7 @@ async function lockApp() {
   historyEntry.value = null
   qrCode.value = null
   showTypePicker.value = false
+  showImportWizard.value = false
   categoryPicker.value = null
   searchQuery.value = ''
   try {

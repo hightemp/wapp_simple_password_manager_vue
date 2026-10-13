@@ -9,6 +9,7 @@ import {
   normalizePath, parentPath, pathName, joinPath, isWithin, replacePrefix, collectPaths, buildTree,
 } from '@/utils/categories'
 import { useReposStore } from './repos'
+import type { ImportedEntry } from '@/services/importers'
 import {
   DEFAULT_TYPE, entryType, typeById, customKey, newCustomId, toCustomKind,
   CUSTOM_FIELD_KINDS, type CustomField, type CustomFieldKind,
@@ -577,6 +578,58 @@ export const useDatabaseStore = defineStore('database', () => {
     unsavedChanges.value++
   }
 
+  // --- import from other apps ---
+
+  /**
+   * Imported entries that are already in the database (same type and values). Login-like
+   * entries match on name or URL + login + password; other types on all fields.
+   */
+  function findDuplicates(entries: ImportedEntry[]): Set<ImportedEntry> {
+    const key = (type: string, values: Record<string, unknown>) => {
+      const v = (field: string) => String(values[field] ?? '').trim().toLowerCase()
+      if (type === 'login') return JSON.stringify([type, v('url') || v('name'), v('login'), v('password')])
+      const fields = Object.keys(values).filter((field) => !NON_FIELD_KEYS.has(field) && field !== 'category' && !field.startsWith('custom:')).sort()
+      return JSON.stringify([type, ...fields.map((field) => [field, v(field)])])
+    }
+    const existing = new Set(table.value.data.map((item) => key(entryType(item).id, item)))
+    return new Set(entries.filter((item) => existing.has(key(item.type, { ...item.fields, name: item.name }))))
+  }
+
+  /**
+   * Add imported entries under the category `prefix` (their folders become subcategories).
+   * Returns the ids of the new entries.
+   */
+  function addImportedEntries(entries: ImportedEntry[], prefix: string): number[] {
+    const ids: number[] = []
+    for (const imported of entries) {
+      const item: Entry = {
+        id: ++table.value.last_index,
+        type: typeById(imported.type)?.id ?? DEFAULT_TYPE,
+        name: imported.name,
+        ...imported.fields,
+      }
+      const category = normalizePath(joinPath(normalizePath(prefix), normalizePath(imported.category)))
+      if (category) item.category = category
+      if (imported.custom.length) {
+        item.custom = imported.custom.map(({ label, kind }) => ({ id: newCustomId(), label, kind }))
+        item.custom.forEach((field, i) => { item[customKey(field.id)] = imported.custom[i].value })
+      }
+      table.value.data.push(item)
+      ids.push(item.id!)
+    }
+    if (ids.length) unsavedChanges.value++
+    return ids
+  }
+
+  /** Remove entries for good, without the trash (undoing an import) */
+  function discardEntries(ids: number[]) {
+    const remove = new Set(ids)
+    const kept = table.value.data.filter((item) => !remove.has(item.id!))
+    if (kept.length === table.value.data.length) return
+    table.value.data = kept
+    unsavedChanges.value++
+  }
+
   function exportDatabase() {
     downloadJson('passwords-database', JSON.stringify(database.value, null, 4))
   }
@@ -825,6 +878,9 @@ export const useDatabaseStore = defineStore('database', () => {
     deleteCategories,
     moveEntries,
     exportDatabase,
+    findDuplicates,
+    addImportedEntries,
+    discardEntries,
     importDatabase,
     connectToCurrentRepo,
     saveToAllRepos,

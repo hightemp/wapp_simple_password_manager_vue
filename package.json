@@ -21,6 +21,7 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@octokit/rest": "^22.0.1",
     "crypto-js": "^4.2.0",
+    "fflate": "^0.8.3",
     "js-base64": "^3.7.5",
     "pinia": "^3.0.4",
     "qrcode-generator": "^2.0.4",
