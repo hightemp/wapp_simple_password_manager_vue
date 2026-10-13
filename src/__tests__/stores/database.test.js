@@ -740,6 +740,20 @@ describe('Database Store (Pinia)', () => {
       expect(entry.history.at(-1).fields).toMatchObject({ login: 'acc', password: 'p' })
     })
 
+    it('should start select fields with their first option', () => {
+      db.openEditWindow({}, 'wifi')
+      expect(db.form.security).toBe('WPA/WPA2/WPA3')
+      expect(db.form.hidden).toBe('No')
+    })
+
+    it('should keep a shared key when switching between types (login → server)', () => {
+      db.openEditWindow({}, 'login')
+      db.setFormField('login', 'root')
+      db.setFormType('server')
+      expect(db.form.login).toBe('root')
+      expect(db.formCustom).toEqual([])
+    })
+
     it('should remove, reorder and rename custom fields in the form', () => {
       db.openEditWindow({}, 'secure_note')
       const a = db.addCustomField('text', 'A')

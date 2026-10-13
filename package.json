@@ -23,6 +23,7 @@
     "crypto-js": "^4.2.0",
     "js-base64": "^3.7.5",
     "pinia": "^3.0.4",
+    "qrcode-generator": "^2.0.4",
     "vue": "^3.5.0",
     "webdav": "^5.11.0"
   },

@@ -199,6 +199,7 @@
       @copy="(field) => copyField(contextMenu.entry, field)"
       @edit="db.openEditWindow(contextMenu.entry)"
       @history="historyEntry = contextMenu.entry"
+      @action="(id) => runAction(contextMenu.entry, id)"
       @restore="restoreEntries([contextMenu.entry.id])"
       @delete="deleteEntry(contextMenu.entry)"
       @close="closeContextMenu"
@@ -219,11 +220,14 @@
       @edit="editFromDetails"
       @change-category="categoryPicker = { mode: 'move', entry: detailsEntry! }"
       @history="historyEntry = detailsEntry"
+      @action="(id) => runAction(detailsEntry, id)"
+      @update-field="(key, value) => db.setEntryFields(detailsEntry!.id!, { [key]: value })"
       @restore="restoreFromDetails"
       @delete="deleteFromDetails"
       @close="detailsEntry = null"
     />
-    <!-- After the details sheet so it opens on top of it -->
+    <!-- After the details sheet so they open on top of it -->
+    <QrCodeModal :qr="qrCode" @close="qrCode = null" />
     <EntryHistoryModal
       :entry="historyEntry"
       @restore="restoreHistory"
@@ -282,6 +286,7 @@ import CategoryPickerSheet from '@/components/CategoryPickerSheet.vue'
 import EntryEditModal from '@/components/EntryEditModal.vue'
 import EntryTypePicker from '@/components/EntryTypePicker.vue'
 import EntryHistoryModal from '@/components/EntryHistoryModal.vue'
+import QrCodeModal from '@/components/QrCodeModal.vue'
 import EntryContextMenu from '@/components/EntryContextMenu.vue'
 import RepoSettingsModal from '@/components/RepoSettingsModal.vue'
 import CreateDatabaseModal from '@/components/CreateDatabaseModal.vue'
@@ -342,6 +347,8 @@ const searchQuery = ref('')
 const detailsEntry = ref<Entry | null>(null)
 // Entry whose history is shown
 const historyEntry = ref<Entry | null>(null)
+// QR code shown by a type action (Wi-Fi)
+const qrCode = ref<{ title: string; text: string; hint?: string } | null>(null)
 
 // --- categories ---
 const { selectOnly, selectTrash, trashSelected, typeFilter, effectiveSelection, effectiveSelections } = useCategoryState()
@@ -735,6 +742,29 @@ function restoreFromDetails() {
   if (entry) restoreEntries([entry.id!])
 }
 
+/** Run an extra action of the entry's type: copy a composed text or show a QR code */
+async function runAction(entry: Entry | null, id: string) {
+  const action = entry && entryType(entry).actions?.find((a) => a.id === id)
+  if (!entry || !action) return
+  if (action.qr) {
+    qrCode.value = {
+      title: entry.name || action.label,
+      text: action.qr(entry),
+      hint: 'Point the phone camera at the code to join the network. The code contains the password — show it only to people you trust.',
+    }
+    return
+  }
+  if (action.copy) {
+    try {
+      await copySecret(action.copy(entry))
+    } catch (_) {
+      notify('Copy failed', 'The browser blocked clipboard access', 'error')
+      return
+    }
+    notify('Copied', action.label.replace(/^Copy /, ''), 'success', 2000)
+  }
+}
+
 // --- history ---
 function restoreHistory(fields: Record<string, string>) {
   const entry = historyEntry.value
@@ -903,6 +933,7 @@ async function lockApp() {
   showMobileMenu.value = false
   detailsEntry.value = null
   historyEntry.value = null
+  qrCode.value = null
   showTypePicker.value = false
   categoryPicker.value = null
   searchQuery.value = ''

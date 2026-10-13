@@ -876,6 +876,10 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
   }
 
   async function expectTouchTarget(locator: Locator) {
+    // Measure after sheets have finished sliding in
+    await locator.page().evaluate(() => Promise.all(document.getAnimations()
+      .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+      .map((animation) => animation.finished.catch(() => {}))))
     const box = await locator.boundingBox()
     expect(box, 'element should be visible').not.toBeNull()
     expect(box!.width).toBeGreaterThanOrEqual(44)
@@ -1077,6 +1081,37 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
     await expect(page.locator('.entry-card')).toHaveCount(1)
     await expect(page.locator('.mobile-category-name')).toHaveText('All · Card')
     await expectNoHorizontalScroll(page)
+  })
+
+  test('should copy an address and mark recovery codes from the details', async ({ page }) => {
+    await page.locator('.bottom-nav [aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="address"]').click()
+    await page.locator('.modal-panel [data-field="name"] input').fill('Home')
+    await page.locator('.modal-panel [data-field="city"] input').fill('Seattle')
+    await page.locator('.modal-panel [data-field="street"] input').fill('Pine St')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+    await page.locator('.entry-card:has-text("Home")').click()
+    await page.locator('.modal-panel button:has-text("Copy address")').click()
+    await expect(page.locator('.notification:has-text("Cop")')).toBeVisible()
+    await page.keyboard.press('Escape')
+
+    await page.locator('.bottom-nav [aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="recovery_codes"]').click()
+    await page.locator('.modal-panel [data-field="name"] input').fill('Codes')
+    await page.locator('.modal-panel [data-field="codes"] .form-field-hidden-text').click()
+    await page.locator('.modal-panel [data-field="codes"] textarea').fill('one\ntwo')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+
+    await page.locator('.entry-card:has-text("Codes")').click()
+    const sheet = page.locator('.modal-panel')
+    await sheet.locator('[aria-label="Show codes"]').click()
+    await expectTouchTarget(sheet.locator('.code-toggle').first())
+    await sheet.locator('.code-toggle').first().click()
+    await expect(sheet.locator('.code--used')).toHaveCount(1)
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.entry-card:has-text("Codes")')).toContainText('1 of 2 unused')
   })
 
   test('should show history and restore from the trash', async ({ page }) => {
@@ -1528,6 +1563,52 @@ test.describe('Entry types', () => {
     await expect(page.locator('.modal-panel .custom-field').nth(1).locator('.form-field-input')).toHaveValue('toor')
     await save(page)
     await expect(rows(page).first().locator('.cell-type-icon')).toHaveAttribute('title', 'Secure Note')
+  })
+
+  test('should show a Wi-Fi QR code and copy an ssh command', async ({ page }) => {
+    await startEntry(page, 'wifi')
+    await field(page, 'name').locator('input').fill('Home Wi-Fi')
+    await field(page, 'ssid').locator('input').fill('HomeNet')
+    await field(page, 'password').locator('input').fill('wifi-pass')
+    await expect(field(page, 'security').locator('select')).toHaveValue('WPA/WPA2/WPA3')
+    await save(page)
+    await rows(page).filter({ hasText: 'Home Wi-Fi' }).click({ button: 'right' })
+    await page.locator('.ctx-item:has-text("Show QR code")').click()
+    const qr = page.locator('.modal-panel:has-text("Home Wi-Fi")')
+    await expect(qr.locator('svg.qr-image path')).toHaveAttribute('d', /^M/)
+    await page.keyboard.press('Escape')
+
+    await startEntry(page, 'server')
+    await field(page, 'name').locator('input').fill('Deploy box')
+    await field(page, 'host').locator('input').fill('10.0.0.1')
+    await field(page, 'port').locator('input').fill('2222')
+    await field(page, 'login').locator('input').fill('deploy')
+    await save(page)
+    await expect(rows(page).filter({ hasText: 'Deploy box' })).toContainText('deploy@10.0.0.1:2222')
+    await rows(page).filter({ hasText: 'Deploy box' }).click({ button: 'right' })
+    await page.locator('.ctx-item:has-text("Copy ssh command")').click()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('ssh -p 2222 deploy@10.0.0.1')
+  })
+
+  test('should mark recovery codes as used', async ({ page }) => {
+    await startEntry(page, 'recovery_codes')
+    await field(page, 'name').locator('input').fill('GitHub codes')
+    await field(page, 'codes').locator('.form-field-hidden-text').click()
+    await field(page, 'codes').locator('textarea').fill('aaaa-1111\nbbbb-2222\ncccc-3333')
+    await field(page, 'codes').locator('.code-toggle').first().click()
+    await expect(field(page, 'codes').locator('.code--used')).toHaveCount(1)
+    await expect(field(page, 'codes').locator('textarea')).toHaveValue(/^✓ aaaa-1111/)
+    await save(page)
+    await expect(rows(page).first()).toContainText('2 of 3 unused')
+  })
+
+  test('should pick a document kind from the list', async ({ page }) => {
+    await startEntry(page, 'document')
+    await field(page, 'name').locator('input').fill('License')
+    await field(page, 'doc_kind').locator('select').selectOption("Driver's license")
+    await field(page, 'expiry_date').locator('input').fill('2030-05-31')
+    await save(page)
+    await expect(rows(page).first()).toContainText("Driver's license · until")
   })
 
   test('should filter by type and add entries of the filtered type', async ({ page }) => {

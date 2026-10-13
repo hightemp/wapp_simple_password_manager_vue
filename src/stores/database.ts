@@ -97,7 +97,12 @@ const cloneDatabase = (database: Database): Database => JSON.parse(JSON.stringif
 /** Form values of a new entry of a type: Category, Name and the type's fields */
 function emptyForm(type = DEFAULT_TYPE): Record<string, string> {
   const fields = typeById(type)?.fields ?? []
-  return Object.fromEntries(['category', 'name', ...fields.map((field) => field.key)].map((key) => [key, '']))
+  return {
+    category: '',
+    name: '',
+    // Select fields start with their first option
+    ...Object.fromEntries(fields.map((field) => [field.key, field.options?.[0] ?? ''])),
+  }
 }
 
 function createEmptyDatabase(): Database {
@@ -359,7 +364,7 @@ export const useDatabaseStore = defineStore('database', () => {
       formCustom.value.push({ id, label: field.label, kind: toCustomKind(field.kind) })
       form.value[customKey(id)] = value
     }
-    for (const field of to.fields) form.value[field.key] ??= ''
+    for (const field of to.fields) form.value[field.key] ??= field.options?.[0] ?? ''
     formType.value = to.id
   }
 
@@ -445,10 +450,11 @@ export const useDatabaseStore = defineStore('database', () => {
 
   // --- history ---
 
-  /** Set fields of an entry to older values (recorded in the history as a change too) */
+  /** Set fields of an entry, e.g. to older values (recorded in the history as a change too) */
   function restoreFields(id: number, fields: Record<string, string>) {
     if (changeEntry(findEntry(id), fields)) unsavedChanges.value++
   }
+  const setEntryFields = restoreFields
 
   function clearHistory(id: number) {
     const entry = findEntry(id)
@@ -809,6 +815,7 @@ export const useDatabaseStore = defineStore('database', () => {
     deleteForever,
     emptyTrash,
     restoreFields,
+    setEntryFields,
     clearHistory,
     createCategory,
     renameCategory,

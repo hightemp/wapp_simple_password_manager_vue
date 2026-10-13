@@ -11,7 +11,10 @@
         <button v-for="item in copyItems" :key="item.key" class="ctx-item" @click="emit('copy', item.key)">
           <div :class="item.icon" /> Copy {{ item.label }}
         </button>
-        <div v-if="copyItems.length" class="ctx-sep" />
+        <button v-for="action in actions" :key="action.id" class="ctx-item" @click="emit('action', action.id)">
+          <div :class="action.icon" /> {{ action.label }}
+        </button>
+        <div v-if="copyItems.length || actions.length" class="ctx-sep" />
         <!-- Deleted entry: restore or delete for good -->
         <template v-if="inTrash">
           <button class="ctx-item" @click="emit('restore')">
@@ -59,6 +62,7 @@ const emit = defineEmits<{
   (e: 'edit'): void
   (e: 'delete'): void
   (e: 'history'): void
+  (e: 'action', id: string): void
   (e: 'restore'): void
   (e: 'close'): void
 }>()
@@ -71,6 +75,11 @@ const copyItems = computed(() => {
   const keys = [...new Set([...type.quickCopy, ...(type.secret ? [type.secret] : [])])]
   return keys.filter((key) => entry[key]).map((key) => ({ key, label: describeField(entry, key).label, icon: copyIcon(key) }))
 })
+
+// Extra actions of the type (copy address, Wi-Fi QR code, …)
+const actions = computed(() =>
+  props.entry ? (entryType(props.entry).actions ?? []).filter((action) => action.available(props.entry!)) : []
+)
 
 // Gap kept between the menu and the viewport edges
 const EDGE_GAP = 8

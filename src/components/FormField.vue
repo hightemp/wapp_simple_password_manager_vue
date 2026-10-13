@@ -22,8 +22,13 @@
       </div>
     </div>
 
-    <!-- secret multi-line text: hidden behind a placeholder until shown -->
-    <div v-else-if="field.kind === 'secret_multiline'" class="form-field-control form-field-control--textarea form-field-control--secret">
+    <!-- choice from a list -->
+    <select v-else-if="field.kind === 'select'" :id="inputId" v-model="model" class="form-field-input form-field-select">
+      <option v-for="option in field.options" :key="option" :value="option">{{ option }}</option>
+    </select>
+
+    <!-- secret multi-line text (and recovery codes): hidden behind a placeholder until shown -->
+    <div v-else-if="field.kind === 'secret_multiline' || field.kind === 'codes'" class="form-field-control form-field-control--textarea form-field-control--secret">
       <textarea
         v-if="isRevealed"
         :id="inputId"
@@ -34,7 +39,7 @@
         autocomplete="off"
       />
       <button v-else type="button" class="form-field-input form-field-hidden-text" @click="isRevealed = true">
-        {{ model ? `•••••••• (${lineCount} line${lineCount === 1 ? '' : 's'})` : 'Empty — click to write' }}
+        {{ model ? hiddenSummary : 'Empty — click to write' }}
       </button>
       <div class="form-field-actions">
         <button type="button" class="form-field-btn" :aria-label="isRevealed ? `Hide ${field.label}` : `Show ${field.label}`" @click="isRevealed = !isRevealed">
@@ -44,6 +49,7 @@
           <div :class="isCopied ? 'i-lucide-check' : 'i-lucide-copy'" />
         </button>
       </div>
+      <RecoveryCodes v-if="field.kind === 'codes' && isRevealed && model" v-model:value="model" />
     </div>
 
     <!-- single-line inputs -->
@@ -87,10 +93,12 @@ import { copySecret, CLIPBOARD_CLEAR_DELAY } from '@/utils/clipboard'
 import { useNotify } from '@/composables/useNotify'
 import { cardBrand, digitsOnly, formatCardNumber, formatExpiry, isValidCardNumber } from '@/utils/card'
 import type { FieldKind } from '@/types/entryTypes'
+import { countUnused } from '@/utils/recoveryCodes'
 import CategoryInput from './CategoryInput.vue'
+import RecoveryCodes from './RecoveryCodes.vue'
 
 const props = defineProps<{
-  field: { label: string; kind: FieldKind | 'category'; placeholder?: string }
+  field: { label: string; kind: FieldKind | 'category'; placeholder?: string; options?: string[] }
   modelValue: string | undefined
   // Storage key, exposed as data-field for tests and styling
   fieldKey?: string
@@ -119,7 +127,14 @@ const inputMode = computed(() =>
   props.field.kind === 'card_number' || props.field.kind === 'month_year' ? 'numeric' : undefined
 )
 
-const lineCount = computed(() => model.value.split('\n').length)
+const hiddenSummary = computed(() => {
+  if (props.field.kind === 'codes') {
+    const { unused, total } = countUnused(model.value)
+    return `•••••••• (${unused} of ${total} codes unused)`
+  }
+  const lines = model.value.split('\n').length
+  return `•••••••• (${lines} line${lines === 1 ? '' : 's'})`
+})
 
 function onInput(event: Event) {
   const input = event.target as HTMLInputElement
@@ -227,6 +242,10 @@ onBeforeUnmount(() => clearTimeout(copiedTimer))
   text-align: left;
   color: var(--c-text-muted);
   letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.form-field-select {
   cursor: pointer;
 }
 

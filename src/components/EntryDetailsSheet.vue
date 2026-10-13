@@ -9,6 +9,11 @@
       <div class="details-type">
         <div :class="type.icon" /> {{ type.label }}
       </div>
+      <div v-if="actions.length && !inTrash" class="details-actions-row">
+        <button v-for="action in actions" :key="action.id" class="action-btn action-btn--ghost action-btn--sm" @click="emit('action', action.id)">
+          <div :class="action.icon" /> {{ action.label }}
+        </button>
+      </div>
 
       <!-- Category: shown even when empty, with a button to move the entry -->
       <div class="details-row" data-field="category">
@@ -27,7 +32,13 @@
           <dd class="details-value">
             <!-- Secrets: masked until shown -->
             <template v-if="isSecretKind(field.kind)">
-              <span :class="['details-text', 'details-secret', { masked: !revealed.has(field.key), 'details-multiline': field.kind === 'secret_multiline' && revealed.has(field.key) }]">
+              <RecoveryCodes
+                v-if="field.kind === 'codes' && revealed.has(field.key)"
+                class="details-text"
+                :value="entry[field.key]"
+                @update:value="(value) => emit('update-field', field.key, value)"
+              />
+              <span v-else :class="['details-text', 'details-secret', { masked: !revealed.has(field.key), 'details-multiline': field.kind === 'secret_multiline' && revealed.has(field.key) }]">
                 {{ revealed.has(field.key) ? display(field) : '••••••••' }}
               </span>
               <button class="details-btn" :aria-label="revealed.has(field.key) ? `Hide ${field.label.toLowerCase()}` : `Show ${field.label.toLowerCase()}`" @click="toggle(field.key)">
@@ -80,6 +91,7 @@ import { computed, reactive, watch } from 'vue'
 import type { Entry } from '@/stores/database'
 import { entryType, entryFields, isSecretKind, formatDate, type FieldDef } from '@/types/entryTypes'
 import { formatCardNumber } from '@/utils/card'
+import RecoveryCodes from './RecoveryCodes.vue'
 import BaseModal from './BaseModal.vue'
 
 const props = defineProps<{
@@ -95,6 +107,8 @@ const emit = defineEmits<{
   (e: 'change-category'): void
   (e: 'delete'): void
   (e: 'history'): void
+  (e: 'action', id: string): void
+  (e: 'update-field', key: string, value: string): void
   (e: 'restore'): void
   (e: 'close'): void
 }>()
@@ -102,6 +116,10 @@ const emit = defineEmits<{
 const type = computed(() => entryType(props.entry))
 // Fields of the entry except Name (it is the sheet title)
 const fields = computed(() => (props.entry ? entryFields(props.entry, type.value) : []))
+
+const actions = computed(() =>
+  props.entry ? (type.value.actions ?? []).filter((action) => action.available(props.entry!)) : []
+)
 
 // Revealed secrets; the sheet always opens with all of them hidden
 const revealed = reactive(new Set<string>())
@@ -140,6 +158,13 @@ function href(field: FieldDef): string {
   font-size: var(--text-sm);
   color: var(--c-accent);
   font-weight: 600;
+}
+
+.details-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 .details-row {

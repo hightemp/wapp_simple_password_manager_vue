@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { entryType, entryFields, describeField, mainSecret, entryUrl, ENTRY_TYPES } from '../../types/entryTypes'
+import { entryType, entryFields, describeField, mainSecret, entryUrl, ENTRY_TYPES, wifiQrText, sshCommand, isSecretKind } from '../../types/entryTypes'
 
 describe('entry types', () => {
   it('should treat entries without a type as logins', () => {
@@ -37,5 +37,32 @@ describe('entry types', () => {
     expect(mainSecret({ type: 'address' })).toBeNull()
     expect(entryUrl({ type: 'api_key', url: 'https://console' })).toBe('https://console')
     expect(entryUrl({ type: 'card', url: 'x' })).toBe('')
+  })
+
+  it('should build Wi-Fi QR texts with escaping', () => {
+    expect(wifiQrText({ ssid: 'Home;Net', password: 'p:a"ss', security: 'WPA/WPA2/WPA3', hidden: 'No' }))
+      .toBe('WIFI:T:WPA;S:Home\\;Net;P:p\\:a\\"ss;;')
+    expect(wifiQrText({ ssid: 'Cafe', security: 'None', hidden: 'Yes' })).toBe('WIFI:T:nopass;S:Cafe;H:true;;')
+  })
+
+  it('should treat every secret kind as masked', () => {
+    expect(['secret', 'secret_multiline', 'card_number', 'codes'].every(isSecretKind)).toBe(true)
+    expect(isSecretKind('text')).toBe(false)
+  })
+
+  it('should build ssh commands', () => {
+    expect(sshCommand({ host: 'example.com' })).toBe('ssh example.com')
+    expect(sshCommand({ host: 'example.com', login: 'root', port: '22' })).toBe('ssh root@example.com')
+    expect(sshCommand({ host: '10.0.0.1', login: 'deploy', port: '2222' })).toBe('ssh -p 2222 deploy@10.0.0.1')
+  })
+
+  it('should summarize stage 2 types and offer their actions', () => {
+    expect(entryType({ type: 'server' }).details({ host: 'h', login: 'u', port: '22' })).toBe('u@h:22')
+    expect(entryType({ type: 'recovery_codes' }).details({ codes: 'a\n✓ b\nc' })).toBe('2 of 3 unused')
+    expect(entryType({ type: 'wifi' }).details({ ssid: 'Home', security: 'WEP' })).toBe('Home · WEP')
+    const address = entryType({ type: 'address' }).actions[0]
+    expect(address.copy({ street: 'Pine St', building: '12', city: 'Seattle', postal_code: '98101', country: 'USA' }))
+      .toBe('Pine St 12, Seattle, 98101, USA')
+    expect(address.available({})).toBe(false)
   })
 })

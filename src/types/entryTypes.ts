@@ -1,4 +1,5 @@
 import { cardBrand, lastFour } from '@/utils/card'
+import { countUnused } from '@/utils/recoveryCodes'
 
 /**
  * Entry types: which fields an entry has and how they are shown.
@@ -9,12 +10,26 @@ import { cardBrand, lastFour } from '@/utils/card'
 export type FieldKind =
   | 'text' | 'secret' | 'multiline' | 'secret_multiline'
   | 'url' | 'email' | 'phone' | 'date' | 'month_year' | 'card_number'
+  | 'select' | 'codes'
 
 export interface FieldDef {
   key: string
   label: string
   kind: FieldKind
   placeholder?: string
+  // Choices of a select field (the first one is the default)
+  options?: string[]
+}
+
+/** Extra action of a type: copy a composed text, or show it as a QR code */
+export interface TypeAction {
+  id: string
+  label: string
+  icon: string
+  copy?: (entry: Values) => string
+  qr?: (entry: Values) => string
+  // Hidden when the entry lacks the data
+  available: (entry: Values) => boolean
 }
 
 /** A field added by the user to one entry; its value is stored under customKey(id) */
@@ -55,6 +70,7 @@ export interface EntryTypeDef {
   details: (entry: Values) => string
   // Show the password generator in the form (it fills `password`)
   generator?: boolean
+  actions?: TypeAction[]
 }
 
 export const DEFAULT_TYPE = 'login'
@@ -162,8 +178,107 @@ export const ENTRY_TYPES: EntryTypeDef[] = [
     ],
     quickCopy: [],
     details: (entry) => join([entry.city, join([entry.street, entry.building], ' ')], ', '),
+    actions: [{
+      id: 'copy-address',
+      label: 'Copy address',
+      icon: 'i-lucide-clipboard-copy',
+      copy: (entry) => join([join([entry.street, entry.building], ' '), entry.city, entry.region, entry.postal_code, entry.country], ', '),
+      available: (entry) => Boolean(entry.street || entry.city || entry.country),
+    }],
+  },
+  {
+    id: 'document',
+    label: 'Document',
+    icon: 'i-lucide-file-badge',
+    fields: [
+      { key: 'doc_kind', label: 'Kind', kind: 'select', options: ['Passport', 'ID card', "Driver's license", 'Tax ID', 'Insurance', 'Other'] },
+      { key: 'doc_number', label: 'Number', kind: 'secret' },
+      { key: 'holder', label: 'Holder', kind: 'text' },
+      { key: 'issued_by', label: 'Issued by', kind: 'text' },
+      { key: 'issue_date', label: 'Issue date', kind: 'date' },
+      { key: 'expiry_date', label: 'Expiry date', kind: 'date' },
+      NOTES,
+    ],
+    secret: 'doc_number',
+    quickCopy: ['doc_number'],
+    details: (entry) => join([entry.doc_kind, entry.expiry_date && `until ${formatDate(entry.expiry_date)}`]),
+  },
+  {
+    id: 'wifi',
+    label: 'Wi-Fi',
+    icon: 'i-lucide-wifi',
+    fields: [
+      { key: 'ssid', label: 'Network name', kind: 'text' },
+      { key: 'password', label: 'Password', kind: 'secret' },
+      { key: 'security', label: 'Security', kind: 'select', options: ['WPA/WPA2/WPA3', 'WEP', 'None'] },
+      { key: 'hidden', label: 'Hidden network', kind: 'select', options: ['No', 'Yes'] },
+      NOTES,
+    ],
+    secret: 'password',
+    quickCopy: ['ssid', 'password'],
+    details: (entry) => join([entry.ssid, entry.security]),
+    generator: true,
+    actions: [{
+      id: 'wifi-qr',
+      label: 'Show QR code',
+      icon: 'i-lucide-qr-code',
+      qr: wifiQrText,
+      available: (entry) => Boolean(entry.ssid),
+    }],
+  },
+  {
+    id: 'server',
+    label: 'Server / SSH',
+    icon: 'i-lucide-server',
+    fields: [
+      { key: 'host', label: 'Host', kind: 'text', placeholder: 'example.com or 192.0.2.10' },
+      { key: 'port', label: 'Port', kind: 'text', placeholder: '22' },
+      { key: 'login', label: 'Username', kind: 'text' },
+      { key: 'password', label: 'Password', kind: 'secret' },
+      { key: 'private_key', label: 'Private key', kind: 'secret_multiline' },
+      { key: 'passphrase', label: 'Key passphrase', kind: 'secret' },
+      NOTES,
+    ],
+    secret: 'password',
+    quickCopy: ['host', 'password'],
+    details: (entry) => (entry.host ? `${entry.login ? entry.login + '@' : ''}${entry.host}${entry.port ? ':' + entry.port : ''}` : ''),
+    generator: true,
+    actions: [{
+      id: 'copy-ssh',
+      label: 'Copy ssh command',
+      icon: 'i-lucide-terminal',
+      copy: sshCommand,
+      available: (entry) => Boolean(entry.host),
+    }],
+  },
+  {
+    id: 'recovery_codes',
+    label: 'Recovery Codes',
+    icon: 'i-lucide-list-checks',
+    fields: [
+      { key: 'codes', label: 'Codes', kind: 'codes', placeholder: 'One code per line' },
+      NOTES,
+    ],
+    secret: 'codes',
+    quickCopy: [],
+    details: (entry) => {
+      const { unused, total } = countUnused(entry.codes ?? '')
+      return total ? `${unused} of ${total} unused` : ''
+    },
   },
 ]
+
+/** Text of a Wi-Fi QR code (the format phone cameras understand) */
+export function wifiQrText(entry: Values): string {
+  const escape = (value: string) => String(value ?? '').replace(/([\\;,:"])/g, '\\$1')
+  const security = entry.security === 'None' ? 'nopass' : entry.security === 'WEP' ? 'WEP' : 'WPA'
+  return `WIFI:T:${security};S:${escape(entry.ssid)};${security === 'nopass' ? '' : `P:${escape(entry.password)};`}${entry.hidden === 'Yes' ? 'H:true;' : ''};`
+}
+
+export function sshCommand(entry: Values): string {
+  const port = entry.port && entry.port !== '22' ? `-p ${entry.port} ` : ''
+  return `ssh ${port}${entry.login ? entry.login + '@' : ''}${entry.host ?? ''}`
+}
 
 const TYPES_BY_ID = new Map(ENTRY_TYPES.map((type) => [type.id, type]))
 
@@ -183,7 +298,7 @@ export function customKey(id: string): string {
 }
 
 export function isSecretKind(kind: FieldKind): boolean {
-  return kind === 'secret' || kind === 'secret_multiline' || kind === 'card_number'
+  return kind === 'secret' || kind === 'secret_multiline' || kind === 'card_number' || kind === 'codes'
 }
 
 /** Fields of an entry: those of its type, then its custom fields (key = storage key) */
@@ -234,6 +349,9 @@ const COPY_ICONS: Record<string, string> = {
   card_number: 'i-lucide-credit-card',
   api_key: 'i-lucide-key-square',
   note: 'i-lucide-notebook-pen',
+  ssid: 'i-lucide-wifi',
+  host: 'i-lucide-server',
+  doc_number: 'i-lucide-file-badge',
 }
 
 /** Icon of a quick-copy button */
@@ -252,7 +370,8 @@ export function newCustomId(): string {
 export function toCustomKind(kind: FieldKind): CustomFieldKind {
   switch (kind) {
     case 'secret': case 'card_number': return 'secret'
-    case 'month_year': return 'text'
+    case 'month_year': case 'select': return 'text'
+    case 'codes': return 'secret_multiline'
     default: return kind
   }
 }
