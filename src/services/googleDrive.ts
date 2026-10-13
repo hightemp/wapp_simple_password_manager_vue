@@ -90,6 +90,11 @@ export async function ensureToken(clientId: string): Promise<string> {
 
 // === Drive API helpers ===
 
+/** Error with the HTTP status, so callers can tell "access denied" from other failures */
+function driveError(action: string, res: Response): Error {
+  return Object.assign(new Error(`Drive ${action}: ${res.status}`), { status: res.status })
+}
+
 export async function findFile(
   token: string,
   fileName: string,
@@ -109,7 +114,7 @@ export async function findFile(
       { headers: { Authorization: `Bearer ${newToken}` } },
     )
   }
-  if (!res.ok) throw new Error(`Drive list: ${res.status}`)
+  if (!res.ok) throw driveError('list', res)
   const { files } = await res.json()
   return files.length > 0 ? files[0].id : null
 }
@@ -118,15 +123,25 @@ export async function readFile(token: string, fileId: string): Promise<string> {
   const res = await fetch(`${DRIVE_API}/${fileId}?alt=media`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) throw new Error(`Drive read: ${res.status}`)
+  if (!res.ok) throw driveError('read', res)
   return res.text()
+}
+
+/** Current version of a file (increases with every change) */
+export async function getVersion(token: string, fileId: string): Promise<string> {
+  const res = await fetch(`${DRIVE_API}/${fileId}?fields=version`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw driveError('version', res)
+  const { version } = await res.json()
+  return String(version)
 }
 
 export async function createFile(
   token: string,
   fileName: string,
   content: string,
-): Promise<string> {
+): Promise<{ id: string; version: string }> {
   const boundary = '---boundary' + Date.now()
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
@@ -135,7 +150,7 @@ export async function createFile(
     content +
     `\r\n--${boundary}--`
 
-  const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart`, {
+  const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart&fields=id,version`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -143,17 +158,17 @@ export async function createFile(
     },
     body,
   })
-  if (!res.ok) throw new Error(`Drive create: ${res.status}`)
+  if (!res.ok) throw driveError('create', res)
   const data = await res.json()
-  return data.id
+  return { id: data.id, version: String(data.version ?? '') }
 }
 
 export async function updateFile(
   token: string,
   fileId: string,
   content: string,
-): Promise<void> {
-  const res = await fetch(`${DRIVE_UPLOAD}/${fileId}?uploadType=media`, {
+): Promise<string> {
+  const res = await fetch(`${DRIVE_UPLOAD}/${fileId}?uploadType=media&fields=version`, {
     method: 'PATCH',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -161,7 +176,9 @@ export async function updateFile(
     },
     body: content,
   })
-  if (!res.ok) throw new Error(`Drive update: ${res.status}`)
+  if (!res.ok) throw driveError('update', res)
+  const data = await res.json().catch(() => ({}))
+  return String(data.version ?? '')
 }
 
 export async function deleteFile(
@@ -173,5 +190,5 @@ export async function deleteFile(
     headers: { Authorization: `Bearer ${token}` },
   })
   // 204 No Content is the success response for DELETE
-  if (!res.ok && res.status !== 204) throw new Error(`Drive delete: ${res.status}`)
+  if (!res.ok && res.status !== 204) throw driveError('delete', res)
 }

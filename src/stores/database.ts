@@ -2,7 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { downloadJson } from '@/utils/download'
 import { DecryptionError } from '@/utils/crypto'
-import { NotFoundError, type FileSystemDriver } from '@/services/FileSystemDriver'
+import { NotFoundError, ConflictError, AuthError, decryptJson, type FileSystemDriver } from '@/services/FileSystemDriver'
+import { addBackup, backupKey } from '@/services/backups'
+import { mergeDatabases, type MergeStats } from '@/utils/merge'
 import {
   normalizePath, parentPath, pathName, joinPath, isWithin, replacePrefix, collectPaths, buildTree,
 } from '@/utils/categories'
@@ -72,6 +74,32 @@ const HISTORY_FIELDS = Object.keys(COLUMNS).filter((name) => name !== 'category'
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
+
+/** The file in the repo was saved elsewhere with another master password — it can't be merged */
+export class PasswordMismatchError extends Error {
+  constructor() {
+    super('The database was changed elsewhere and saved with a different master password')
+    this.name = 'PasswordMismatchError'
+  }
+}
+
+/** Saving failed for some repositories */
+export class SaveError extends Error {
+  failures: { repo: string; error: unknown }[]
+
+  constructor(failures: { repo: string; error: unknown }[]) {
+    super('Failed to save to: ' + failures.map(({ repo, error }) => `${repo} (${errorMessage(error)})`).join(', '))
+    this.name = 'SaveError'
+    this.failures = failures
+  }
+}
+
+export interface SaveResult {
+  // Set when changes made elsewhere were merged in
+  merged: MergeStats | null
+}
+
+const cloneDatabase = (database: Database): Database => JSON.parse(JSON.stringify(database))
 
 function emptyFields(): Record<string, string> {
   return Object.fromEntries(Object.keys(COLUMNS).map((name) => [name, '']))
@@ -239,6 +267,14 @@ export const useDatabaseStore = defineStore('database', () => {
   const editWindow = ref(createClosedEditWindow())
 
   const unsavedChanges = ref(0)
+
+  // The database as last loaded from or saved to the current repo: the common base
+  // when changes made elsewhere are merged in
+  let baseDatabase: Database | null = null
+  // Master passwords replaced in this session — files saved elsewhere may still use one
+  let previousPasswords: string[] = []
+  // The current repo has no database yet: waiting for the user to confirm creating one
+  const isCreatePending = ref(false)
 
   // UI state that database actions need to access
   const isLoading = ref(false)
@@ -451,41 +487,97 @@ export const useDatabaseStore = defineStore('database', () => {
   }
 
   /**
-   * Save the database to every repo in `repos.reposToSave`.
-   * Rejects with an error listing the failed repos; unsaved changes are kept in that case.
+   * Save the database to every repo in `repos.reposToSave`. The current repo is saved
+   * first: if its file was changed elsewhere, those changes are merged in. The other
+   * repos hold copies and are overwritten.
+   * `overwrite` replaces the current repo's file even if it can't be merged.
+   * Rejects with a SaveError listing the failed repos; unsaved changes are kept then.
    */
-  async function saveToAllRepos(): Promise<void> {
+  async function saveToAllRepos({ overwrite = false } = {}): Promise<SaveResult> {
     const repos = useReposStore()
-    const targets = repos.allRepos
-      .map((repo, index) => ({ repo, index }))
-      .filter(({ index }) => repos.reposToSave.has(index))
-
-    const results = await Promise.allSettled(targets.map(({ index }) => {
-      if (!repos.fileSystems[index]) {
-        repos.createFileSystem(index)
-      }
-      return saveDatabase(repos.fileSystems[index])
-    }))
-
-    const failures = results
-      .map((result, i) => ({ result, repo: targets[i].repo }))
-      .filter(({ result }) => result.status === 'rejected')
-      .map(({ result, repo }) => `${repo.name} (${errorMessage((result as PromiseRejectedResult).reason)})`)
-
-    if (failures.length > 0) {
-      throw new Error('Failed to save to: ' + failures.join(', '))
+    const fileSystemOf = (index: number) => {
+      if (!repos.fileSystems[index]) repos.createFileSystem(index)
+      return repos.fileSystems[index]
     }
+    const targets = [...repos.reposToSave]
+      .filter((index) => repos.allRepos[index])
+      .sort((a, b) => Number(b === repos.selectedIndex) - Number(a === repos.selectedIndex))
+    const failures: { repo: string; error: unknown }[] = []
+    let merged: MergeStats | null = null
+
+    const [first, ...copies] = targets
+    if (first !== undefined && first === repos.selectedIndex) {
+      try {
+        merged = await saveToCurrentRepo(fileSystemOf(first), overwrite)
+      } catch (error) {
+        failures.push({ repo: repos.allRepos[first].name, error })
+      }
+    } else if (first !== undefined) {
+      copies.unshift(first)
+    }
+
+    const results = await Promise.allSettled(copies.map((index) =>
+      saveDatabase(fileSystemOf(index), { force: true })))
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') failures.push({ repo: repos.allRepos[copies[i]].name, error: result.reason })
+    })
+
+    if (failures.length > 0) throw new SaveError(failures)
     unsavedChanges.value = 0
+    return { merged }
   }
 
-  async function saveDatabase(fileSystem: FileSystemDriver): Promise<void> {
+  /** Save to the repo the database was loaded from, merging in changes made elsewhere */
+  async function saveToCurrentRepo(fileSystem: FileSystemDriver, overwrite: boolean): Promise<MergeStats | null> {
+    // The file as it is in the repo before this save, kept as a local backup
+    let previous: string | undefined = fileSystem.lastContent[DATABASE_PATH]
+    let merged: MergeStats | null = null
     try {
-      await fileSystem.writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
-    } catch (_) {
-      // Retry once after re-reading the file (refreshes cached SHA / file id)
-      await fileSystem.readFile(DATABASE_PATH)
-      await fileSystem.writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
+      await saveDatabase(fileSystem, { force: overwrite })
+    } catch (error) {
+      if (!(error instanceof ConflictError)) throw error
+      const theirs = (await fileSystem.readFile(DATABASE_PATH)).data
+      previous = theirs
+      const result = mergeDatabases(baseDatabase, database.value, normalizeDatabase(await decryptWithKnownPasswords(theirs)))
+      setDatabase(result.database)
+      merged = result.stats
+      // Changed yet again in the meantime → ConflictError; the next Save merges again
+      await saveDatabase(fileSystem)
     }
+    baseDatabase = cloneDatabase(database.value)
+    if (previous) await addBackup(backupKey(fileSystem.repo), previous)
+    return merged
+  }
+
+  async function decryptWithKnownPasswords(data: string): Promise<unknown> {
+    for (const password of [masterPassword.value, ...[...previousPasswords].reverse()]) {
+      try {
+        return await decryptJson(data, password)
+      } catch (error) {
+        if (!(error instanceof DecryptionError)) throw error
+      }
+    }
+    throw new PasswordMismatchError()
+  }
+
+  async function saveDatabase(fileSystem: FileSystemDriver, options?: { force?: boolean }): Promise<void> {
+    await fileSystem.writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value, options)
+  }
+
+  /** Use a new master password; files saved with the old one can still be merged */
+  function changeMasterPassword(password: string) {
+    if (masterPassword.value) previousPasswords.push(masterPassword.value)
+    masterPassword.value = password
+    unsavedChanges.value++
+  }
+
+  /**
+   * Load a database from a backup (encrypted file content) as unsaved changes.
+   * Throws DecryptionError when it was saved with another master password.
+   */
+  async function restoreBackup(data: string) {
+    setDatabase(normalizeDatabase(await decryptJson(data, masterPassword.value)))
+    unsavedChanges.value++
   }
 
   function showConnectionError(message: string) {
@@ -506,7 +598,11 @@ export const useDatabaseStore = defineStore('database', () => {
       if (error instanceof DecryptionError) {
         showConnectionError('Incorrect password (or the database file is damaged). Please check your master password and try again.')
       } else if (error instanceof NotFoundError) {
-        await createDatabase(fileSystem)
+        // Ask before creating: the master password just typed will protect it
+        isLoading.value = false
+        isCreatePending.value = true
+      } else if (error instanceof AuthError) {
+        showConnectionError(error.message)
       } else {
         showConnectionError('Connection failed: ' + errorMessage(error))
       }
@@ -515,6 +611,7 @@ export const useDatabaseStore = defineStore('database', () => {
 
     try {
       setDatabase(normalizeDatabase(data))
+      baseDatabase = cloneDatabase(database.value)
       isLoading.value = false
     } catch (error) {
       showConnectionError('The database file is damaged: ' + errorMessage(error))
@@ -522,17 +619,27 @@ export const useDatabaseStore = defineStore('database', () => {
   }
 
   /**
-   * Repo has no database yet — write the one currently in memory: empty on a fresh
+   * The repo has no database yet — write the one currently in memory: empty on a fresh
    * start, or the open database when switching to a new repo (copies it there).
    */
-  async function createDatabase(fileSystem: FileSystemDriver): Promise<void> {
+  async function createDatabase(): Promise<void> {
+    const fileSystem = useReposStore().currentFileSystem!
+    isCreatePending.value = false
+    isLoading.value = true
     try {
       await fileSystem.writeEncryptedJson(DATABASE_PATH, database.value, masterPassword.value)
     } catch (error) {
       showConnectionError('Failed to create new database: ' + errorMessage(error))
       return
     }
+    baseDatabase = cloneDatabase(database.value)
     isLoading.value = false
+  }
+
+  /** The user declined to create a database: back to the repository window */
+  function cancelCreateDatabase() {
+    isCreatePending.value = false
+    isRepoWindowOpen.value = true
   }
 
   /**
@@ -551,6 +658,9 @@ export const useDatabaseStore = defineStore('database', () => {
     }
 
     masterPassword.value = ''
+    previousPasswords = []
+    baseDatabase = null
+    isCreatePending.value = false
     database.value = createEmptyDatabase()
     form.value = emptyFields()
     editWindow.value = createClosedEditWindow()
@@ -575,6 +685,7 @@ export const useDatabaseStore = defineStore('database', () => {
     isLoading,
     isRepoWindowOpen,
     connectionError,
+    isCreatePending,
     setFormField,
     setFilter,
     setDatabase,
@@ -600,7 +711,11 @@ export const useDatabaseStore = defineStore('database', () => {
     connectToCurrentRepo,
     saveToAllRepos,
     saveDatabase,
+    changeMasterPassword,
+    restoreBackup,
     loadDatabase,
+    createDatabase,
+    cancelCreateDatabase,
     lock,
   }
 })

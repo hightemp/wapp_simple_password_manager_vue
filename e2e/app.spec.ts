@@ -16,9 +16,24 @@ async function connectLocalStorage(page: Page, password = 'test1234') {
 
   // Click Connect
   await page.locator('button:has-text("Connect")').click()
+  await confirmCreateIfAsked(page, password)
 
   // Wait for modal to close
   await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 5000 })
+}
+
+// An empty storage asks before creating a database: repeat the password and confirm
+async function confirmCreateIfAsked(page: Page, password: string) {
+  const create = page.locator('.modal-panel:has-text("Create a new database")')
+  // Loaded (no dialog left open) or asking to create
+  await page.waitForFunction(() => !document.querySelector('.loader-overlay') && (
+    !document.querySelector('.modal-overlay:not(.modal-leave-active)') ||
+    [...document.querySelectorAll('.modal-panel')].some((panel) => panel.textContent?.includes('Create a new database'))
+  ), null, { timeout: 5000 })
+  if (await create.isVisible()) {
+    await create.locator('input[type="password"]').fill(password)
+    await create.locator('button.action-btn--primary').click()
+  }
 }
 
 // ====== Tests ======
@@ -1231,6 +1246,129 @@ test.describe('Trash', () => {
     await page.reload()
     await connectLocalStorage(page)
     await expect(trashNode(page).locator('.cat-count')).toHaveText('1')
+  })
+})
+
+test.describe('Master Password', () => {
+  test('should confirm creating a database and warn about a weak password', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('.master-input').fill('abc')
+    await page.locator('.repo-card').first().click()
+    await page.locator('button:has-text("Connect")').click()
+
+    const create = page.locator('.modal-panel:has-text("Create a new database")')
+    await expect(create).toBeVisible()
+    await expect(create.locator('.strength-label')).toHaveText('Very weak')
+    await expect(create.locator('.weak-warning')).toBeVisible()
+
+    // Back returns to the repository window
+    await create.locator('button:has-text("Back")').click()
+    await expect(page.locator('.master-input')).toBeVisible()
+
+    // A strong password, typed twice
+    await page.locator('.master-input').fill('violet-anchor-Cloud-73')
+    await page.locator('button:has-text("Connect")').click()
+    await expect(create.locator('.weak-warning')).toHaveCount(0)
+    await create.locator('input[type="password"]').fill('violet-anchor-cloud-73')
+    await create.locator('button:has-text("Create")').click()
+    await expect(create.locator('.field-error')).toHaveText('Passwords do not match')
+    await create.locator('input[type="password"]').fill('violet-anchor-Cloud-73')
+    await create.locator('button:has-text("Create")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+    await expect(page.locator('.data-grid')).toBeVisible()
+  })
+
+  test('should ask again before changing to a weak password', async ({ page }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+    await page.locator('.sidebar-btn[aria-label="Change Password"]').click()
+    const modal = page.locator('.modal-panel:has-text("Change Master Password")')
+    const inputs = modal.locator('input[type="password"]')
+    await inputs.nth(1).fill('qwerty')
+    await inputs.nth(2).fill('qwerty')
+    await modal.locator('button.action-btn--primary').click()
+    await expect(modal.locator('.weak-warning')).toBeVisible()
+    await modal.locator('button:has-text("Use Weak Password")').click()
+    await expect(page.locator('.notification:has-text("Password Changed")')).toBeVisible()
+  })
+})
+
+test.describe('Sync conflicts & backups', () => {
+  const rows = (page: Page) => page.locator('.grid-row:not(.grid-header)')
+
+  async function addEntry(page: Page, name: string, password = '') {
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    const inputs = page.locator('.modal-panel .form-field-input')
+    await inputs.nth(1).fill(name)
+    if (password) await inputs.nth(3).fill(password)
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+  }
+
+  async function save(page: Page, toast = 'Saved') {
+    // Close earlier toasts so the check below sees this save's one
+    await page.evaluate(() => document.querySelectorAll<HTMLElement>('.notification-dismiss').forEach((b) => b.click()))
+    await expect(page.locator('.notification')).toHaveCount(0)
+    await page.keyboard.press('ControlOrMeta+s')
+    await expect(page.locator(`.notification:has-text("${toast}")`).first()).toBeVisible()
+  }
+
+  test('should merge changes saved in another tab instead of overwriting them', async ({ page, context }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+    await addEntry(page, 'Shared', 'original')
+    await save(page)
+
+    // A second tab works with the same storage
+    const other = await context.newPage()
+    await other.goto('/')
+    await connectLocalStorage(other)
+    await addEntry(other, 'From tab 2')
+    await rows(other).filter({ hasText: 'Shared' }).dblclick()
+    await other.locator('.modal-panel .form-field-input').nth(3).fill('theirs')
+    await other.locator('.modal-panel button:has-text("Save")').click()
+    await save(other)
+    await other.close()
+
+    // The first tab changed the same password and adds its own entry
+    await addEntry(page, 'From tab 1')
+    await rows(page).filter({ hasText: 'Shared' }).dblclick()
+    await page.locator('.modal-panel .form-field-input').nth(3).fill('mine')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await save(page, 'merged changes from another device')
+
+    await expect(rows(page)).toHaveCount(3)
+    await expect(rows(page).filter({ hasText: 'From tab 2' })).toBeVisible()
+    // Same field changed in both tabs: ours is kept, theirs is in the history
+    await rows(page).filter({ hasText: 'Shared' }).dblclick()
+    await expect(page.locator('.modal-panel .form-field-input').nth(3)).toHaveValue('mine')
+    await page.locator('.modal-panel button:has-text("History")').click()
+    const history = page.locator('.modal-panel:has-text("History: Shared")')
+    await history.locator('.history-version').first().locator('[aria-label="Show Password"]').click()
+    await expect(history.locator('.history-version').first()).toContainText('theirs')
+  })
+
+  test('should keep local backups and restore one', async ({ page }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+    await addEntry(page, 'First')
+    await save(page)
+    await addEntry(page, 'Second')
+    await save(page)
+
+    await page.locator('.sidebar-btn[aria-label="Select Repository"]').click()
+    await page.locator('.repo-card').first().click()
+    await page.locator('.modal-panel button:has-text("Backups")').click()
+    const backups = page.locator('.modal-panel:has-text("Backups: Local Storage")')
+    // Before each save the previous version was kept: the empty database, then "First"
+    await expect(backups.locator('.backup-row')).toHaveCount(2)
+    await backups.locator('.backup-row').first().locator('button:has-text("Restore")').click()
+    await page.locator('.modal-panel:has-text("Restore backup") button:has-text("Restore")').click()
+
+    await expect(page.locator('.notification:has-text("Backup restored")')).toBeVisible()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('First')
   })
 })
 

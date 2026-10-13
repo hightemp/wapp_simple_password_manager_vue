@@ -35,6 +35,8 @@ Screenshots use fictional demo data and are regenerated with `npm run screenshot
 - **AES-256-GCM encryption** — passwords encrypted client-side (Web Crypto API) with PBKDF2-SHA256 key derivation (600k iterations); tampering is detected
 - **Multiple storage backends** — LocalStorage, GitHub repository, WebDAV server, or Google Drive (appDataFolder)
 - **Multi-repo sync** — save to multiple repositories simultaneously
+- **Safe sync between devices** — changes saved elsewhere in the meantime are merged, not overwritten
+- **Local backups** — the last 10 versions of each repository's database are kept in the browser
 - **Dark theme** — automatic system detection + manual toggle
 - **PWA** — install as a native app on any device
 - **Auto-lock** — automatic session lock after 5 minutes of inactivity
@@ -56,7 +58,7 @@ Screenshots use fictional demo data and are regenerated with `npm run screenshot
 - **Vite 6** — fast builds with HMR
 - **UnoCSS** — atomic CSS with custom design tokens
 - **Lucide Icons** — clean, consistent icon set
-- **Vitest** — 137 unit tests (crypto, debounce, stores, FileSystemDriver, Google Drive client)
+- **Vitest** — 195 unit tests (crypto, stores, merge, backups, FileSystemDriver, Google Drive client, password strength)
 - **Web Crypto API** — native browser encryption (AES-256-GCM + PBKDF2)
 - **crypto-js** — only for reading legacy (v1/v2) database files
 
@@ -103,6 +105,8 @@ On first launch, the Repository Settings modal appears. Choose a storage backend
 ### 2. Set Master Password
 
 Enter your master password in the Repository Settings modal. This password encrypts/decrypts your entire database. **It is never stored or transmitted.**
+
+If the repository has no database yet, the app asks before creating one: type the master password again, and check the strength meter — a weak password gets a warning (anyone with a copy of the encrypted file can try passwords offline). The same meter is shown when you change the master password.
 
 ### 3. Connect & Manage
 
@@ -155,6 +159,20 @@ Below 768 px the app switches to a mobile layout:
 - **Details** — tap a card to see all fields, reveal or copy the password, open the URL, move it to another category, see its **History**, **Edit** or **Delete**
 - **Trash** — in the category picker; open a deleted entry to **Restore** it or delete it forever
 - **Bottom bar** — Repository · Add · Save · **More** (export, import, change master password, theme, lock)
+
+## Sync & Backups
+
+**Several devices.** The app remembers which version of the database file it loaded (GitHub blob SHA, Google Drive file version, or a hash of the content for WebDAV and Local Storage). On **Save** it checks that the file was not changed in the meantime. If it was — e.g. you saved on your phone while the laptop had the database open — the two versions are merged instead of overwriting each other:
+
+- entries added, edited, moved to the trash or deleted on either side are all kept
+- if the same field was changed on both sides, your value wins and the other one is added to the entry's **History**
+- the toast tells what came from the other side
+
+If the other version was saved with a different master password, it can't be merged: the app asks whether to overwrite it (it is kept as a local backup) or to cancel and reconnect with that password. The extra repositories a database is copied to (e.g. Local Storage next to GitHub) are always overwritten.
+
+**Local backups.** Before the database in a repository is overwritten, the previous version is kept in the browser's IndexedDB — the last 10 per repository, still encrypted. Select a repository and press **Backups** at the bottom of the repository window (or **Open a backup** when loading fails); **Restore** loads a backup as unsaved changes, **Save** stores it.
+
+**Access errors.** A rejected GitHub token, missing repository permissions, a rate limit, a wrong WebDAV password or a denied Google Drive grant are reported in plain words, with what to fix. Spaces pasted around tokens, logins and URLs are removed.
 
 ## Security
 

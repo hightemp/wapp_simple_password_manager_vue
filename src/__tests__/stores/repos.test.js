@@ -32,6 +32,18 @@ describe('Repos Store (Pinia)', () => {
     expect(repos.allRepos[1].name).toBe('My Repo')
   })
 
+  it('should trim spaces around repo settings when saving, loading and importing', () => {
+    repos.saveRepo(-1, { type: 'github', name: ' Vault ', login: 'user ', repo: ' test', key: 'ghp_abc\n' })
+    expect(repos.allRepos[1]).toEqual({ type: 'github', name: 'Vault', login: 'user', repo: 'test', key: 'ghp_abc' })
+
+    localStorageMock.setItem('aReposList', JSON.stringify([{ type: 'webdav', name: 'D', url: ' https://dav ', username: 'u', password: ' p ' }]))
+    repos.loadRepos()
+    expect(repos.allRepos[1]).toMatchObject({ url: 'https://dav', password: 'p' })
+
+    repos.importRepos([{ type: 'github', name: 'I', key: '  k  ' }])
+    expect(repos.allRepos[1].key).toBe('k')
+  })
+
   it('should edit a repo', () => {
     repos.saveRepo(-1, { type: 'github', name: 'Original', login: 'user', repo: 'test', key: 'abc' })
     repos.saveRepo(1, { type: 'github', name: 'Updated', login: 'user2', repo: 'test2', key: 'def' })

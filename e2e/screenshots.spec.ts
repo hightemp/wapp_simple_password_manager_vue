@@ -48,6 +48,10 @@ async function connectLocalStorage(page: Page) {
   await page.locator('.master-input').fill('demo-password')
   await page.locator('.repo-card').first().click()
   await page.locator('button:has-text("Connect")').click()
+  // Empty storage: confirm creating the database
+  const create = page.locator('.modal-panel:has-text("Create a new database")')
+  await create.locator('input[type="password"]').fill('demo-password')
+  await create.locator('button.action-btn--primary').click()
   await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 5000 })
 }
 

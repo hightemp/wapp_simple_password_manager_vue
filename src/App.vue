@@ -237,6 +237,7 @@
 
   <EntryEditModal title="Edit Entry" />
   <RepoSettingsModal />
+  <CreateDatabaseModal />
   <!-- After other modals so it stacks on top of them -->
   <ConfirmDialog ref="confirmDialog" />
   <NotificationToast ref="notifications" />
@@ -245,7 +246,8 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, useTemplateRef, provide, reactive, nextTick } from 'vue'
-import { useDatabaseStore, parseDatabase, TRASH_RETENTION, type Entry } from '@/stores/database'
+import { useDatabaseStore, parseDatabase, TRASH_RETENTION, SaveError, PasswordMismatchError, type Entry } from '@/stores/database'
+import type { MergeStats } from '@/utils/merge'
 import { useReposStore } from '@/stores/repos'
 import { debounce } from '@/utils/debounce'
 import { copySecret, CLIPBOARD_CLEAR_DELAY } from '@/utils/clipboard'
@@ -268,6 +270,7 @@ import EntryEditModal from '@/components/EntryEditModal.vue'
 import EntryHistoryModal from '@/components/EntryHistoryModal.vue'
 import EntryContextMenu from '@/components/EntryContextMenu.vue'
 import RepoSettingsModal from '@/components/RepoSettingsModal.vue'
+import CreateDatabaseModal from '@/components/CreateDatabaseModal.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 import KeyboardShortcutsModal from '@/components/KeyboardShortcutsModal.vue'
 import NotificationToast from '@/components/NotificationToast.vue'
@@ -721,16 +724,60 @@ async function deleteSelected() {
   }
 }
 
-async function saveAll() {
+async function saveAll({ overwrite = false } = {}) {
+  let merged: MergeStats | null
   try {
-    await db.saveToAllRepos()
+    ({ merged } = await db.saveToAllRepos({ overwrite }))
   } catch (error) {
+    if (!overwrite && error instanceof SaveError && error.failures.some((f) => f.error instanceof PasswordMismatchError)) {
+      await offerOverwrite()
+      return
+    }
     notify('Save failed', error instanceof Error ? error.message : String(error), 'error', 8000)
     return
   }
   justSaved.value = true
   setTimeout(() => { justSaved.value = false }, 2000)
-  notify('Saved', 'Data has been saved', 'success')
+  if (merged) {
+    afterMerge()
+    notify('Saved — merged changes from another device', describeMerge(merged), 'success', 8000)
+  } else {
+    notify('Saved', 'Data has been saved', 'success')
+  }
+}
+
+/** The repo's file was saved elsewhere with another master password: it can't be merged */
+async function offerOverwrite() {
+  const confirmed = await confirmAction({
+    title: 'Database changed elsewhere',
+    message: `The database in "${repos.currentRepo?.name}" was changed on another device and saved with a different master password, so the changes can't be merged.\n\n` +
+      'Overwrite it with the database open here (the other version is kept as a local backup), or cancel and reconnect with the other master password to see it.',
+    confirmText: 'Overwrite',
+    danger: true,
+  })
+  if (confirmed) await saveAll({ overwrite: true })
+}
+
+function describeMerge(stats: MergeStats): string {
+  const parts = [
+    stats.added && `${stats.added} added`,
+    stats.updated && `${stats.updated} updated`,
+    stats.removed && `${stats.removed} removed`,
+  ].filter(Boolean)
+  let text = parts.length ? `Entries from there: ${parts.join(', ')}.` : 'No entries changed there.'
+  if (stats.conflicts) {
+    text += ` ${stats.conflicts} field${stats.conflicts === 1 ? ' was' : 's were'} changed on both sides — your values are kept, theirs are in the entry history.`
+  }
+  return text
+}
+
+/** Merging replaced the entry objects: drop references to the old ones */
+function afterMerge() {
+  const byId = new Map(db.table.data.map((entry) => [entry.id, entry]))
+  selectedEntry.value = byId.get(selectedEntry.value?.id) ?? null
+  detailsEntry.value = null
+  historyEntry.value = null
+  closeContextMenu()
 }
 
 function openChangePassword() {

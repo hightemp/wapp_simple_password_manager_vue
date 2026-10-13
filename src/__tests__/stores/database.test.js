@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useDatabaseStore, parseDatabase, normalizeDatabase, changeEntry, HISTORY_LIMIT, TRASH_RETENTION } from '../../stores/database'
+import { useDatabaseStore, parseDatabase, normalizeDatabase, changeEntry, HISTORY_LIMIT, TRASH_RETENTION, PasswordMismatchError, SaveError } from '../../stores/database'
 import { useReposStore } from '../../stores/repos'
-import { NotFoundError } from '../../services/FileSystemDriver'
+import { NotFoundError, FileSystemDriver } from '../../services/FileSystemDriver'
+import { encrypt } from '../../utils/crypto'
 import { DecryptionError } from '../../utils/crypto'
 
 describe('Database Store (Pinia)', () => {
@@ -172,8 +173,9 @@ describe('Database Store (Pinia)', () => {
       const repos = useReposStore()
       repos.selectRepo(0)
       repos.fileSystems[0] = {
+        repo: { type: 'localstorage' },
+        lastContent: {},
         writeEncryptedJson: () => Promise.reject(new Error('boom')),
-        readFile: () => Promise.reject(new Error('still boom')),
       }
       db.masterPassword = 'secret'
       addEntry('Item')
@@ -181,6 +183,85 @@ describe('Database Store (Pinia)', () => {
       await expect(db.saveToAllRepos()).rejects.toThrow(/Local Storage/)
       expect(db.unsavedChanges).toBe(1)
     })
+  })
+
+  describe('conflicts', () => {
+    const PATH = 'passwords-database'
+
+    /** Connect to Local Storage holding `table`, as if loaded on this device */
+    async function connect(table, password = 'secret') {
+      localStorage.clear()
+      localStorage.setItem(PATH, await encrypt(JSON.stringify({ table }), password))
+      const repos = useReposStore()
+      repos.selectRepo(0)
+      repos.fileSystems[0] = new FileSystemDriver({ type: 'localstorage', name: 'Local Storage' })
+      db.masterPassword = password
+      await db.loadDatabase()
+    }
+
+    /** Another device saves `table` to the same storage */
+    async function saveElsewhere(table, password = 'secret') {
+      localStorage.setItem(PATH, await encrypt(JSON.stringify({ table }), password))
+    }
+
+    const start = { last_index: 2, data: [{ id: 1, name: 'Mail', password: 'p1' }, { id: 2, name: 'Bank', password: 'b1' }] }
+
+    it('should merge changes saved elsewhere instead of overwriting them', async () => {
+      await connect(start)
+      db.restoreFields(1, { password: 'mine' })
+      await saveElsewhere({ last_index: 3, data: [...start.data, { id: 3, name: 'Added there' }] })
+
+      const { merged } = await db.saveToAllRepos()
+      expect(merged).toMatchObject({ added: 1 })
+      expect(db.table.data.map((e) => e.name)).toEqual(['Mail', 'Bank', 'Added there'])
+      expect(db.table.data[0].password).toBe('mine')
+      expect(db.unsavedChanges).toBe(0)
+
+      // The merged database is what is stored now
+      const stored = await new FileSystemDriver({ type: 'localstorage', name: 'x' }).readEncryptedJson(PATH, 'secret')
+      expect(stored.table.data).toHaveLength(3)
+    }, 30000)
+
+    it('should save without merging when nothing changed elsewhere', async () => {
+      await connect(start)
+      db.restoreFields(2, { password: 'b2' })
+      const { merged } = await db.saveToAllRepos()
+      expect(merged).toBeNull()
+      // A second save checks against the version it wrote itself
+      db.restoreFields(2, { password: 'b3' })
+      expect((await db.saveToAllRepos()).merged).toBeNull()
+    }, 30000)
+
+    it('should refuse to merge a file saved with another password, unless overwriting', async () => {
+      await connect(start)
+      db.restoreFields(1, { password: 'mine' })
+      await saveElsewhere(start, 'changed-elsewhere')
+
+      const error = await db.saveToAllRepos().catch((e) => e)
+      expect(error).toBeInstanceOf(SaveError)
+      expect(error.failures[0].error).toBeInstanceOf(PasswordMismatchError)
+      expect(db.unsavedChanges).toBe(1)
+
+      await db.saveToAllRepos({ overwrite: true })
+      const stored = await new FileSystemDriver({ type: 'localstorage', name: 'x' }).readEncryptedJson(PATH, 'secret')
+      expect(stored.table.data[0].password).toBe('mine')
+    }, 30000)
+
+    it('should merge a file saved with the previous master password after changing it', async () => {
+      await connect(start)
+      await saveElsewhere({ last_index: 3, data: [...start.data, { id: 3, name: 'There' }] })
+      db.changeMasterPassword('new-secret')
+      await db.saveToAllRepos()
+      const stored = await new FileSystemDriver({ type: 'localstorage', name: 'x' }).readEncryptedJson(PATH, 'new-secret')
+      expect(stored.table.data).toHaveLength(3)
+    }, 30000)
+
+    it('should load a backup as unsaved changes', async () => {
+      await connect(start)
+      await db.restoreBackup(await encrypt(JSON.stringify({ table: { data: [{ id: 9, name: 'From backup' }] } }), 'secret'))
+      expect(db.table.data.map((e) => e.name)).toEqual(['From backup'])
+      expect(db.unsavedChanges).toBe(1)
+    }, 30000)
   })
 
   describe('lock', () => {
@@ -203,8 +284,9 @@ describe('Database Store (Pinia)', () => {
       repos.selectRepo(0)
       const writes = []
       repos.fileSystems[0] = {
+        repo: { type: 'localstorage' },
+        lastContent: {},
         writeEncryptedJson: (path, value) => { writes.push(JSON.parse(JSON.stringify(value))); return Promise.resolve() },
-        readFile: () => Promise.resolve({ data: '', sha: '' }),
       }
       db.masterPassword = 'secret'
       db.openEditWindow({})
@@ -222,8 +304,9 @@ describe('Database Store (Pinia)', () => {
       const repos = useReposStore()
       repos.selectRepo(0)
       repos.fileSystems[0] = {
+        repo: { type: 'localstorage' },
+        lastContent: {},
         writeEncryptedJson: () => Promise.reject(new Error('offline')),
-        readFile: () => Promise.reject(new Error('offline')),
       }
       db.masterPassword = 'secret'
       db.openEditWindow({})
@@ -301,16 +384,29 @@ describe('Database Store (Pinia)', () => {
       expect(db.connectionError).toBe('')
     })
 
-    it('should create the database when the repo has none', async () => {
+    it('should ask, then create the database when the repo has none', async () => {
       const writes = []
       connectWith({
         readEncryptedJson: async () => { throw new NotFoundError('passwords-database') },
         writeEncryptedJson: async (path, value) => { writes.push(value) },
       })
       await db.loadDatabase()
+      expect(db.isCreatePending).toBe(true)
+      expect(writes.length).toBe(0)
+
+      await db.createDatabase()
       expect(writes.length).toBe(1)
+      expect(db.isCreatePending).toBe(false)
       expect(db.connectionError).toBe('')
       expect(db.isLoading).toBe(false)
+    })
+
+    it('should go back to the repository window when creating is declined', async () => {
+      connectWith({ readEncryptedJson: async () => { throw new NotFoundError('passwords-database') } })
+      await db.loadDatabase()
+      db.cancelCreateDatabase()
+      expect(db.isCreatePending).toBe(false)
+      expect(db.isRepoWindowOpen).toBe(true)
     })
 
     it('should report a wrong password', async () => {

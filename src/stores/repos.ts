@@ -8,10 +8,14 @@ const REPOS_STORAGE_KEY = 'aReposList'
 // Query params that describe a repo passed via link (?type=github&name=...)
 const URL_REPO_PARAMS = ['type', 'name', 'login', 'repo', 'key', 'url', 'username', 'password'] as const
 
-/** Drop runtime flags older versions stored on repo objects */
-function stripRuntimeFields(repo: RepoItem & { needsSave?: unknown; need_save?: unknown }): RepoItem {
+/**
+ * Drop runtime flags older versions stored on repo objects, and spaces around values
+ * (a token pasted with a trailing space or newline is rejected by the server)
+ */
+export function normalizeRepo(repo: RepoItem & { needsSave?: unknown; need_save?: unknown }): RepoItem {
   const { needsSave: _needsSave, need_save: _legacyNeedSave, ...rest } = repo
-  return rest
+  return Object.fromEntries(Object.entries(rest)
+    .map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value])) as unknown as RepoItem
 }
 
 export const useReposStore = defineStore('repos', () => {
@@ -38,7 +42,7 @@ export const useReposStore = defineStore('repos', () => {
 
   // --- actions ---
   function persist() {
-    localStorage.setItem(REPOS_STORAGE_KEY, JSON.stringify(userRepos.value.map(stripRuntimeFields)))
+    localStorage.setItem(REPOS_STORAGE_KEY, JSON.stringify(userRepos.value.map(normalizeRepo)))
   }
 
   /**
@@ -48,7 +52,7 @@ export const useReposStore = defineStore('repos', () => {
    */
   function loadRepos() {
     try {
-      userRepos.value = JSON.parse(localStorage.getItem(REPOS_STORAGE_KEY) || '[]').map(stripRuntimeFields)
+      userRepos.value = JSON.parse(localStorage.getItem(REPOS_STORAGE_KEY) || '[]').map(normalizeRepo)
     } catch (_) {
       userRepos.value = []
     }
@@ -59,6 +63,7 @@ export const useReposStore = defineStore('repos', () => {
     const repoFromUrl = Object.fromEntries(
       URL_REPO_PARAMS.map((param) => [param, url.searchParams.get(param)])
     ) as unknown as RepoItem
+    Object.assign(repoFromUrl, normalizeRepo(repoFromUrl))
     const existing = userRepos.value.find((repo) => repo.name == repoFromUrl.name)
     if (existing) {
       Object.assign(existing, repoFromUrl)
@@ -113,6 +118,7 @@ export const useReposStore = defineStore('repos', () => {
 
   /** Add a new repo (index = -1) or replace the repo at `index` */
   function saveRepo(index: number, repo: RepoItem) {
+    repo = normalizeRepo(repo)
     if (index == -1) {
       userRepos.value.push(repo)
     } else {
@@ -128,7 +134,7 @@ export const useReposStore = defineStore('repos', () => {
   }
 
   function importRepos(repos: RepoItem[]) {
-    userRepos.value = repos.filter((repo) => repo.type !== 'localstorage').map(stripRuntimeFields)
+    userRepos.value = repos.filter((repo) => repo.type !== 'localstorage').map(normalizeRepo)
     persist()
     resetUserRepoState()
   }

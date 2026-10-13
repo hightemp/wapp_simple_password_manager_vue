@@ -25,6 +25,13 @@
               <div class="i-lucide-x" />
             </button>
           </div>
+          <button
+            v-if="repos.selectedIndex !== null"
+            class="action-btn action-btn--ghost action-btn--sm connection-error-backup"
+            @click="backupsIndex = repos.selectedIndex"
+          >
+            <div class="i-lucide-archive-restore" /> Open a backup
+          </button>
         </div>
       </Transition>
 
@@ -224,6 +231,14 @@
         <button class="action-btn action-btn--ghost action-btn--sm" @click="importInput?.click()" title="Import repositories">
           <div class="i-lucide-upload" /> Import
         </button>
+        <button
+          class="action-btn action-btn--ghost action-btn--sm"
+          :disabled="repos.selectedIndex === null"
+          title="Local backups of the selected repository"
+          @click="backupsIndex = repos.selectedIndex"
+        >
+          <div class="i-lucide-archive-restore" /> Backups
+        </button>
         <button class="action-btn action-btn--danger action-btn--sm" @click="repos.clearRepos()" title="Clear all">
           <div class="i-lucide-trash-2" /> Clear
         </button>
@@ -234,6 +249,7 @@
     </div>
   </template>
 </BaseModal>
+<BackupsModal :repo-index="backupsIndex" @close="backupsIndex = null" />
 </template>
 
 <script setup lang="ts">
@@ -245,6 +261,7 @@ import { FileSystemDriver, type RepoItem, type RepoType } from '@/services/FileS
 import { useNotify } from '@/composables/useNotify'
 import { useConfirm } from '@/composables/useConfirm'
 import BaseModal from './BaseModal.vue'
+import BackupsModal from './BackupsModal.vue'
 
 const db = useDatabaseStore()
 const repos = useReposStore()
@@ -268,6 +285,9 @@ const form = reactive({
 const errors = reactive<Record<string, string>>({})
 const showApiKey = ref(false)
 const showWebdavPassword = ref(false)
+
+// Repository whose local backups are shown
+const backupsIndex = ref<number | null>(null)
 
 // --- Clear storage ---
 const clearIndex = ref<number | null>(null)
@@ -486,6 +506,14 @@ async function clearStorage() {
   background: color-mix(in srgb, var(--c-danger) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--c-danger) 25%, transparent);
   border-radius: var(--radius-md);
+}
+
+.connection-error {
+  flex-wrap: wrap;
+}
+
+.connection-error-backup {
+  margin-left: calc(16px + var(--space-2));
 }
 
 .connection-error-icon {

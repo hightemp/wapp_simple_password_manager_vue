@@ -170,11 +170,11 @@ describe('googleDrive', () => {
     it('should POST multipart/related and return new fileId', async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ id: 'new-file-456' }),
+        json: () => Promise.resolve({ id: 'new-file-456', version: '1' }),
       })
 
-      const id = await gd.createFile('mock-token', 'passwords-database', '{"encrypted":"data"}')
-      expect(id).toBe('new-file-456')
+      const created = await gd.createFile('mock-token', 'passwords-database', '{"encrypted":"data"}')
+      expect(created).toEqual({ id: 'new-file-456', version: '1' })
 
       const [url, opts] = fetch.mock.calls[0]
       expect(url).toContain('uploadType=multipart')
@@ -199,10 +199,10 @@ describe('googleDrive', () => {
   })
 
   describe('updateFile', () => {
-    it('should PATCH with media upload', async () => {
-      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true })
+    it('should PATCH with media upload and return the new version', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ version: 7 }) })
 
-      await gd.updateFile('mock-token', 'file-123', '{"updated":"data"}')
+      expect(await gd.updateFile('mock-token', 'file-123', '{"updated":"data"}')).toBe('7')
 
       const [url, opts] = fetch.mock.calls[0]
       expect(url).toContain('file-123')
@@ -219,7 +219,7 @@ describe('googleDrive', () => {
         text: () => Promise.resolve('Server Error'),
       })
 
-      await expect(gd.updateFile('mock-token', 'id', 'x')).rejects.toThrow('Drive update: 500')
+      await expect(gd.updateFile('mock-token', 'id', 'x')).rejects.toMatchObject({ message: 'Drive update: 500', status: 500 })
     })
   })
 

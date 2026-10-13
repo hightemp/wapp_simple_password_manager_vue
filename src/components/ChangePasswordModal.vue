@@ -12,6 +12,7 @@
         <label class="form-field-label">New Password</label>
         <input type="password" class="form-field-input" v-model="newPassword" autocomplete="off"
           :class="{ 'input-error': error && !newPassword }" placeholder="Enter new password" />
+        <PasswordStrengthMeter :password="newPassword" class="chpw-strength" />
       </div>
 
       <div class="form-field">
@@ -26,6 +27,11 @@
           <span>{{ error }}</span>
         </div>
       </Transition>
+
+      <div v-if="!error && isWeak && weakAcknowledged" class="weak-warning">
+        <div class="i-lucide-triangle-alert" />
+        <span>This password is easy to guess. Anyone who gets a copy of the encrypted database can try passwords offline — a weak one may be cracked. Use it anyway?</span>
+      </div>
     </div>
 
     <template #footer>
@@ -34,7 +40,7 @@
         <button class="action-btn action-btn--primary" @click="changePassword" :disabled="isSaving">
           <div v-if="isSaving" class="i-lucide-loader-2 spin" />
           <div v-else class="i-lucide-key" />
-          {{ isSaving ? 'Saving...' : 'Change Password' }}
+          {{ isSaving ? 'Saving...' : isWeak && weakAcknowledged ? 'Use Weak Password' : 'Change Password' }}
         </button>
       </div>
     </template>
@@ -42,10 +48,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useDatabaseStore } from '@/stores/database'
 import { useNotify } from '@/composables/useNotify'
+import { estimateStrength, MIN_SCORE } from '@/utils/passwordStrength'
 import BaseModal from './BaseModal.vue'
+import PasswordStrengthMeter from './PasswordStrengthMeter.vue'
 
 const isOpen = defineModel<boolean>({ required: true })
 
@@ -56,6 +64,10 @@ const newPassword = ref('')
 const confirmPassword = ref('')
 const error = ref('')
 const isSaving = ref(false)
+// A weak password needs a second click
+const weakAcknowledged = ref(false)
+const isWeak = computed(() => estimateStrength(newPassword.value).score < MIN_SCORE)
+watch(newPassword, () => { weakAcknowledged.value = false })
 
 // Reset the form every time the modal opens
 watch(isOpen, (open) => {
@@ -64,6 +76,7 @@ watch(isOpen, (open) => {
   confirmPassword.value = ''
   error.value = ''
   isSaving.value = false
+  weakAcknowledged.value = false
 })
 
 function validate(): string {
@@ -77,13 +90,16 @@ function validate(): string {
 async function changePassword() {
   error.value = validate()
   if (error.value) return
+  if (isWeak.value && !weakAcknowledged.value) {
+    weakAcknowledged.value = true
+    return
+  }
 
   isSaving.value = true
   // Re-encrypt and save to all repos with the new password.
   // The new password stays active even if some saves fail: repos that did save
   // already use it, and the next Save retries the failed ones.
-  db.masterPassword = newPassword.value
-  db.unsavedChanges++
+  db.changeMasterPassword(newPassword.value)
   try {
     await db.saveToAllRepos()
     isOpen.value = false
@@ -120,6 +136,10 @@ async function changePassword() {
   color: var(--c-text-secondary);
   line-height: 1.5;
   margin: 0;
+}
+
+.chpw-strength {
+  margin-top: var(--space-2);
 }
 
 .chpw-error {
