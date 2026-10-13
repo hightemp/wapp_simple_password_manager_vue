@@ -8,13 +8,10 @@
         :style="{ top: position.top + 'px', left: position.left + 'px' }"
         @click="emit('close')"
       >
-        <button class="ctx-item" @click="emit('copy', 'login')">
-          <div class="i-lucide-user" /> Copy Login
+        <button v-for="item in copyItems" :key="item.key" class="ctx-item" @click="emit('copy', item.key)">
+          <div :class="item.icon" /> Copy {{ item.label }}
         </button>
-        <button class="ctx-item" @click="emit('copy', 'password')">
-          <div class="i-lucide-lock" /> Copy Password
-        </button>
-        <div class="ctx-sep" />
+        <div v-if="copyItems.length" class="ctx-sep" />
         <!-- Deleted entry: restore or delete for good -->
         <template v-if="inTrash">
           <button class="ctx-item" @click="emit('restore')">
@@ -32,7 +29,7 @@
           <button class="ctx-item" @click="emit('history')">
             <div class="i-lucide-history" /> History
           </button>
-          <button class="ctx-item" v-if="entry.url" @click="openUrl(entry.url)">
+          <button class="ctx-item" v-if="entryUrl(entry)" @click="openUrl(entryUrl(entry))">
             <div class="i-lucide-external-link" /> Open URL
           </button>
           <div class="ctx-sep" />
@@ -46,7 +43,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, useTemplateRef } from 'vue'
+import { computed, ref, watch, nextTick, useTemplateRef } from 'vue'
+import { entryType, entryUrl, describeField, copyIcon } from '@/types/entryTypes'
 
 const props = defineProps<{
   // Menu is shown while an entry is set
@@ -57,13 +55,22 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'copy', field: 'login' | 'password'): void
+  (e: 'copy', field: string): void
   (e: 'edit'): void
   (e: 'delete'): void
   (e: 'history'): void
   (e: 'restore'): void
   (e: 'close'): void
 }>()
+
+// Copy actions for the entry's quick-copy fields that have a value
+const copyItems = computed(() => {
+  const entry = props.entry
+  if (!entry) return []
+  const type = entryType(entry)
+  const keys = [...new Set([...type.quickCopy, ...(type.secret ? [type.secret] : [])])]
+  return keys.filter((key) => entry[key]).map((key) => ({ key, label: describeField(entry, key).label, icon: copyIcon(key) }))
+})
 
 // Gap kept between the menu and the viewport edges
 const EDGE_GAP = 8

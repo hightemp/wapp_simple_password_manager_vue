@@ -363,7 +363,7 @@ describe('Database Store (Pinia)', () => {
       const result = parseDatabase('{"table": {"data": []}}')
       expect(result.table.last_index).toBe(0)
       expect(result.table.page).toBe(1)
-      expect(result.table.filter.name).toBe('')
+      expect(result.table.filter).toEqual({})
     })
   })
 
@@ -693,6 +693,76 @@ describe('Database Store (Pinia)', () => {
 
     it('should accept databases without a trash', () => {
       expect(normalizeDatabase({ table: { data: [] } }).table.trash).toEqual([])
+    })
+  })
+
+  describe('entry types and custom fields', () => {
+    it('should create an entry of the chosen type with only its fields', () => {
+      db.openEditWindow({}, 'card')
+      expect(Object.keys(db.form)).toEqual(['category', 'name', 'cardholder', 'card_number', 'card_expiry', 'cvv', 'pin', 'bank', 'bank_phone', 'description'])
+      db.setFormField('name', 'Visa')
+      db.setFormField('card_number', '4242 4242 4242 4242')
+      db.saveEditWindow()
+      expect(db.table.data[0]).toEqual({ id: 1, type: 'card', name: 'Visa', card_number: '4242 4242 4242 4242' })
+    })
+
+    it('should save custom fields and record their changes in the history', () => {
+      db.openEditWindow({}, 'login')
+      db.setFormField('name', 'Site')
+      const id = db.addCustomField('secret', 'Secret question')
+      db.setFormField(`custom:${id}`, 'blue')
+      db.saveEditWindow()
+      const entry = db.table.data[0]
+      expect(entry.custom).toEqual([{ id, label: 'Secret question', kind: 'secret' }])
+      expect(entry[`custom:${id}`]).toBe('blue')
+
+      db.openEditWindow(entry)
+      db.setFormField(`custom:${id}`, 'green')
+      db.saveEditWindow()
+      expect(entry.history.at(-1).fields).toEqual({ [`custom:${id}`]: 'blue' })
+    })
+
+    it('should turn fields the new type lacks into custom fields', () => {
+      db.setDatabase(normalizeDatabase({ table: { data: [{ id: 1, name: 'Bank', login: 'acc', password: 'p', url: 'https://bank' }] } }))
+      const entry = db.table.data[0]
+      db.openEditWindow(entry)
+      db.setFormType('api_key')
+      // url and description exist in both types; login and password become custom fields
+      expect(db.formCustom.map((f) => [f.label, f.kind])).toEqual([['Login', 'text'], ['Password', 'secret']])
+      expect(db.form.url).toBe('https://bank')
+      db.saveEditWindow()
+
+      expect(entry.type).toBe('api_key')
+      expect(entry.login).toBeUndefined()
+      expect(entry.password).toBeUndefined()
+      const values = entry.custom.map((f) => entry[`custom:${f.id}`])
+      expect(values).toEqual(['acc', 'p'])
+      expect(entry.history.at(-1).fields).toMatchObject({ login: 'acc', password: 'p' })
+    })
+
+    it('should remove, reorder and rename custom fields in the form', () => {
+      db.openEditWindow({}, 'secure_note')
+      const a = db.addCustomField('text', 'A')
+      const b = db.addCustomField('text', 'B')
+      db.moveCustomField(b, -1)
+      expect(db.formCustom.map((f) => f.label)).toEqual(['B', 'A'])
+      db.updateCustomField(a, { label: 'Renamed', kind: 'date' })
+      db.removeCustomField(b)
+      expect(db.formCustom).toEqual([{ id: a, label: 'Renamed', kind: 'date' }])
+      expect(`custom:${b}` in db.form).toBe(false)
+    })
+
+    it('should keep type and valid custom fields when loading', () => {
+      const database = normalizeDatabase({
+        table: {
+          data: [{
+            id: 1, type: 'card', name: 'C',
+            custom: [{ id: 'x', label: 'Word', kind: 'secret' }, { id: 'x', label: 'dup' }, { label: 'no id' }, { id: 'y', kind: 'weird' }],
+          }],
+        },
+      })
+      expect(database.table.data[0].type).toBe('card')
+      expect(database.table.data[0].custom).toEqual([{ id: 'x', label: 'Word', kind: 'secret' }, { id: 'y', label: '', kind: 'text' }])
     })
   })
 })

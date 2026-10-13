@@ -62,9 +62,10 @@ test.describe('CRUD Operations', () => {
   test('should add a new entry', async ({ page }) => {
     // Click Add button in sidebar
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
 
-    // Edit modal should appear
-    await expect(page.locator('.modal-panel')).toBeVisible()
+    // Edit form should appear
+    await expect(page.locator('.modal-panel .form-field-input').first()).toBeVisible()
 
     // Fill in fields (the form fields are dynamic based on db.structure)
     const inputs = page.locator('.form-field-input')
@@ -93,6 +94,7 @@ test.describe('CRUD Operations', () => {
   test('should edit an entry', async ({ page }) => {
     // First add an entry
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(1).fill('Original Name')
     await page.locator('button:has-text("Save")').click()
@@ -120,6 +122,7 @@ test.describe('CRUD Operations', () => {
   test('should delete an entry', async ({ page }) => {
     // Add entry
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(1).fill('To Delete')
     await page.locator('button:has-text("Save")').click()
@@ -153,6 +156,7 @@ test.describe('Password Generator', () => {
 
   test('should generate and use a password', async ({ page }) => {
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     await expect(page.locator('.modal-panel')).toBeVisible()
 
     // Open password generator
@@ -185,6 +189,7 @@ test.describe('Filtering', () => {
     // Add 2 entries
     for (const name of ['Alpha', 'Beta']) {
       await page.locator('.sidebar-btn[aria-label="Add"]').click()
+      await page.locator('.type-option[data-type="login"]').click()
       const inputs = page.locator('.modal-panel .form-field-input')
       await inputs.nth(1).fill(name)
       await page.locator('button:has-text("Save")').click()
@@ -215,6 +220,7 @@ test.describe('Filtering', () => {
     // Add 30 entries; give entry #15 a unique name for filtering
     for (let i = 1; i <= 30; i++) {
       await page.locator('.sidebar-btn[aria-label="Add"]').click()
+      await page.locator('.type-option[data-type="login"]').click()
       await expect(page.locator('.modal-panel')).toBeVisible()
       const inputs = page.locator('.modal-panel .form-field-input')
       await inputs.nth(1).fill(i === 15 ? 'Unique Item' : `Item ${i}`)
@@ -263,6 +269,7 @@ test.describe('Password Masking', () => {
   test('should mask and reveal passwords', async ({ page }) => {
     // Add entry with password
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(1).fill('Test Entry')
     await inputs.nth(3).fill('mypassword')
@@ -289,6 +296,7 @@ test.describe('Password Masking', () => {
 
   test('should keep cell buttons inside the login and password cells', async ({ page }) => {
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(1).fill('Long')
     await inputs.nth(2).fill('a.very.long.login.name@some-long-domain.example.com')
@@ -317,6 +325,7 @@ test.describe('Password Masking', () => {
 
   test('should mask the password in the edit form until shown', async ({ page }) => {
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const password = page.locator('.modal-panel .form-field-input').nth(3)
     await password.fill('secret-1')
     await expect(password).toHaveAttribute('type', 'password')
@@ -395,6 +404,7 @@ test.describe('Clipboard Copy', () => {
 
     // Add entry with login
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(1).fill('Copy Test')
     await inputs.nth(2).fill('mylogin')
@@ -419,6 +429,7 @@ test.describe('Clipboard Copy', () => {
     await connectLocalStorage(page)
 
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(2).fill('form-login')
     await inputs.nth(3).fill('form-secret')
@@ -437,7 +448,7 @@ test.describe('Clipboard Copy', () => {
     await page.locator('.modal-panel [aria-label="Copy Login"]').click()
     expect(await readClipboard()).toBe('form-login')
 
-    await page.locator('.modal-panel [aria-label="Copy Description"]').click()
+    await page.locator('.modal-panel [aria-label="Copy Notes"]').click()
     expect(await readClipboard()).toBe('some notes')
   })
 })
@@ -446,6 +457,7 @@ test.describe('Clipboard Copy', () => {
 async function addEntries(page: Page, count: number) {
   for (let i = 1; i <= count; i++) {
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     await expect(page.locator('.modal-panel')).toBeVisible()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(0).fill(`Cat${i}`)
@@ -507,6 +519,7 @@ test.describe('Save & Load (LocalStorage)', () => {
 
     // Add entries
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(0).fill('Work')
     await inputs.nth(1).fill('Persist Test')
@@ -582,6 +595,7 @@ test.describe('Import & Export', () => {
 
     // Add entries
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(0).fill('Finance')
     await inputs.nth(1).fill('Export Test')
@@ -628,6 +642,7 @@ test.describe('Categories', () => {
 
   async function addEntry(page: Page, name: string, category = '') {
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     if (category) await inputs.nth(0).fill(category)
     await inputs.nth(1).fill(name)
@@ -798,6 +813,7 @@ test.describe('Categories', () => {
   test('should suggest categories in the entry form and create new ones', async ({ page }) => {
     await seed(page)
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const category = page.locator('.modal-panel .form-field-input').first()
     await category.fill('serv')
     await expect(page.locator('.cat-option')).toHaveText(['Work/Servers', 'Create "serv"'])
@@ -843,6 +859,7 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
 
   async function addEntry(page: Page, entry: { name: string; login?: string; password?: string; url?: string }) {
     await page.locator('.bottom-nav [aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     await expect(page.locator('.modal-panel')).toBeVisible()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(1).fill(entry.name)
@@ -889,6 +906,7 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
     expect(searchFont).toBeGreaterThanOrEqual(16)
 
     await page.locator('.bottom-nav [aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const fieldFont = await page.locator('.modal-panel .form-field-input').first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
     expect(fieldFont).toBeGreaterThanOrEqual(16)
   })
@@ -996,6 +1014,7 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
   test('should filter by category from the category sheet', async ({ page }) => {
     await addEntry(page, { name: 'Outlook' })
     await page.locator('.bottom-nav [aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(0).fill('Work/Email')
     await inputs.nth(1).fill('Gmail')
@@ -1017,6 +1036,7 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
 
   test('should move an entry to another category from its details', async ({ page }) => {
     await page.locator('.bottom-nav [aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(0).fill('Personal')
     await inputs.nth(1).fill('Netflix')
@@ -1031,6 +1051,32 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
 
     await expect(page.locator('.modal-panel [data-field="category"]')).toContainText('Personal')
     await expect(page.locator('.notification:has-text("Entry moved")')).toBeVisible()
+  })
+
+  test('should add a card and filter by type', async ({ page }) => {
+    await addEntry(page, { name: 'Plain login', login: 'me' })
+    await page.locator('.bottom-nav [aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="card"]').click()
+    await page.locator('.modal-panel [data-field="name"] input').fill('Travel card')
+    await page.locator('.modal-panel [data-field="card_number"] input').fill('5555555555554444')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+
+    const card = page.locator('.entry-card:has-text("Travel card")')
+    await expect(card).toContainText('Mastercard •••• 4444')
+    await expectTouchTarget(card.locator('[aria-label="Copy number"]'))
+    await card.click()
+    const sheet = page.locator('.modal-panel')
+    await expect(sheet).not.toContainText('5555')
+    await sheet.locator('[aria-label="Show number"]').click()
+    await expect(sheet).toContainText('5555 5555 5555 4444')
+    await page.keyboard.press('Escape')
+
+    await page.locator('[aria-label="Choose category"]').click()
+    await page.locator('.modal-panel .type-row[data-type="card"]').click()
+    await expect(page.locator('.entry-card')).toHaveCount(1)
+    await expect(page.locator('.mobile-category-name')).toHaveText('All · Card')
+    await expectNoHorizontalScroll(page)
   })
 
   test('should show history and restore from the trash', async ({ page }) => {
@@ -1070,6 +1116,7 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
 // ====== Helper: add one entry and return to grid ======
 async function addOneEntry(page: Page, name = 'TestEntry') {
   await page.locator('.sidebar-btn[aria-label="Add"]').click()
+  await page.locator('.type-option[data-type="login"]').click()
   await expect(page.locator('.modal-panel')).toBeVisible()
   const inputs = page.locator('.modal-panel .form-field-input')
   await inputs.nth(0).fill('Cat')
@@ -1091,6 +1138,7 @@ test.describe('History', () => {
 
   async function addAndEdit(page: Page) {
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     await inputs(page).nth(1).fill('Site')
     await inputs(page).nth(2).fill('old-login')
     await inputs(page).nth(3).fill('old-pass')
@@ -1174,6 +1222,7 @@ test.describe('Trash', () => {
 
   async function addEntry(page: Page, name: string, category = '') {
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     if (category) await inputs.nth(0).fill(category)
     await inputs.nth(1).fill(name)
@@ -1298,6 +1347,7 @@ test.describe('Sync conflicts & backups', () => {
 
   async function addEntry(page: Page, name: string, password = '') {
     await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
     const inputs = page.locator('.modal-panel .form-field-input')
     await inputs.nth(1).fill(name)
     if (password) await inputs.nth(3).fill(password)
@@ -1369,6 +1419,140 @@ test.describe('Sync conflicts & backups', () => {
     await expect(page.locator('.modal-panel')).toHaveCount(0)
     await expect(rows(page)).toHaveCount(1)
     await expect(rows(page).first()).toContainText('First')
+  })
+})
+
+test.describe('Entry types', () => {
+  test.beforeEach(async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.goto('/')
+    await connectLocalStorage(page)
+  })
+
+  const rows = (page: Page) => page.locator('.grid-row:not(.grid-header)')
+  const field = (page: Page, key: string) => page.locator(`.modal-panel [data-field="${key}"]`)
+
+  async function startEntry(page: Page, type: string) {
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator(`.type-option[data-type="${type}"]`).click()
+    await expect(page.locator('.modal-panel .entry-type-select')).toHaveValue(type)
+  }
+
+  async function save(page: Page) {
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).toHaveCount(0)
+  }
+
+  test('should add a card with a formatted, checked number', async ({ page }) => {
+    await startEntry(page, 'card')
+    await expect(page.locator('.modal-panel .modal-title')).toHaveText('New Card')
+    await field(page, 'name').locator('input').fill('Visa Gold')
+    const number = field(page, 'card_number').locator('input')
+    await number.pressSequentially('4242424242424241')
+    await expect(field(page, 'card_number')).toContainText('typo')
+    await number.fill('')
+    await number.pressSequentially('4242424242424242')
+    await expect(number).toHaveValue('4242 4242 4242 4242')
+    await expect(field(page, 'card_number')).toContainText('Visa')
+    await field(page, 'card_expiry').locator('input').pressSequentially('1227')
+    await expect(field(page, 'card_expiry').locator('input')).toHaveValue('12/27')
+    // Logins only: no password generator
+    await expect(page.locator('.pw-gen-toggle')).toHaveCount(0)
+    await save(page)
+
+    const row = rows(page).first()
+    await expect(row).toContainText('Visa •••• 4242 · 12/27')
+    await row.hover()
+    await row.locator('[aria-label="Show number"]').click()
+    await expect(row.locator('.revealed')).toHaveText('4242 4242 4242 4242')
+    await row.locator('[aria-label="Copy number"]').click()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('4242424242424242')
+  })
+
+  test('should keep a secure note hidden until shown', async ({ page }) => {
+    await startEntry(page, 'secure_note')
+    await field(page, 'name').locator('input').fill('Wi-Fi at home')
+    await field(page, 'note').locator('.form-field-hidden-text').click()
+    await field(page, 'note').locator('textarea').fill('line one\nline two')
+    await field(page, 'note').locator('[aria-label="Hide Note"]').click()
+    await expect(field(page, 'note')).toContainText('2 lines')
+    await save(page)
+
+    const row = rows(page).first()
+    await expect(row.locator('.masked')).toBeVisible()
+    await row.hover()
+    await row.locator('[aria-label="Show note"]').click()
+    await expect(row.locator('.revealed')).toContainText('line one')
+  })
+
+  test('should add, keep and reorder custom fields', async ({ page }) => {
+    await startEntry(page, 'login')
+    await field(page, 'name').locator('input').fill('Bank')
+    await page.locator('.modal-panel .add-field-btn').click()
+    const first = page.locator('.modal-panel .custom-field').nth(0)
+    await expect(first.locator('.custom-field-label')).toBeFocused()
+    await first.locator('.custom-field-label').fill('Secret question')
+    await first.locator('.custom-field-kind').selectOption('secret')
+    await first.locator('.form-field-input').fill('blue')
+    await expect(first.locator('.form-field-input')).toHaveAttribute('type', 'password')
+
+    await page.locator('.modal-panel .add-field-btn').click()
+    const second = page.locator('.modal-panel .custom-field').nth(1)
+    await second.locator('.custom-field-label').fill('Branch')
+    await second.locator('.form-field-input').fill('Main street')
+    await second.locator('[aria-label="Move field up"]').click()
+    await expect(page.locator('.modal-panel .custom-field-label').first()).toHaveValue('Branch')
+    await save(page)
+
+    // Search covers custom fields
+    await page.locator('.filter-input').first().fill('Bank')
+    await rows(page).first().dblclick()
+    await expect(page.locator('.modal-panel .custom-field-label')).toHaveCount(2)
+    await expect(page.locator('.modal-panel .custom-field-label').nth(1)).toHaveValue('Secret question')
+    await expect(page.locator('.modal-panel .custom-field').nth(1).locator('.form-field-input')).toHaveValue('blue')
+
+    await page.locator('.modal-panel .custom-field').nth(0).locator('[aria-label="Remove field"]').click()
+    await save(page)
+    await rows(page).first().dblclick()
+    await expect(page.locator('.modal-panel .custom-field')).toHaveCount(1)
+  })
+
+  test('should move fields the new type lacks into custom fields', async ({ page }) => {
+    await startEntry(page, 'login')
+    await field(page, 'name').locator('input').fill('Server')
+    await field(page, 'login').locator('input').fill('root')
+    await field(page, 'password').locator('input').fill('toor')
+    await page.locator('.modal-panel .entry-type-select').selectOption('secure_note')
+    await expect(page.locator('.modal-panel .custom-field-label')).toHaveCount(2)
+    await expect(page.locator('.modal-panel .custom-field-label').nth(0)).toHaveValue('Login')
+    await expect(page.locator('.modal-panel .custom-field').nth(1).locator('.form-field-input')).toHaveValue('toor')
+    await save(page)
+    await expect(rows(page).first().locator('.cell-type-icon')).toHaveAttribute('title', 'Secure Note')
+  })
+
+  test('should filter by type and add entries of the filtered type', async ({ page }) => {
+    await startEntry(page, 'login')
+    await field(page, 'name').locator('input').fill('Mail')
+    await save(page)
+    await startEntry(page, 'identity')
+    await field(page, 'name').locator('input').fill('Me')
+    await field(page, 'full_name').locator('input').fill('John Doe')
+    await save(page)
+
+    const types = page.locator('.type-filter')
+    await expect(types.locator('.type-row[data-type="login"] .type-row-count')).toHaveText('1')
+    await types.locator('.type-row[data-type="identity"]').click()
+    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('John Doe')
+
+    // With a type selected, Add skips the type menu
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await expect(page.locator('.modal-panel .entry-type-select')).toHaveValue('identity')
+    await page.keyboard.press('Escape')
+
+    // Selecting it again shows all types
+    await types.locator('.type-row[data-type="identity"]').click()
+    await expect(rows(page)).toHaveCount(2)
   })
 })
 

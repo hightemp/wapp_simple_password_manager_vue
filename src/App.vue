@@ -80,29 +80,30 @@
           <!-- Header -->
           <div class="grid-row grid-header" :style="gridStyle" role="row">
             <div
-              v-for="(column, key) in columns"
-              :key="key"
+              v-for="column in TABLE_COLUMNS"
+              :key="column.key"
               class="grid-cell grid-cell-header"
               role="columnheader"
-              @click="toggleSort(key as string)"
-              :aria-sort="sortKey === key ? (sortAsc ? 'ascending' : 'descending') : 'none'"
+              @click="toggleSort(column.key)"
+              :aria-sort="sortKey === column.key ? (sortAsc ? 'ascending' : 'descending') : 'none'"
             >
               <div class="header-label-row">
                 <span class="header-label">{{ column.label }}</span>
-                <div v-if="sortKey === key" :class="sortAsc ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'" class="sort-icon" />
+                <div v-if="sortKey === column.key" :class="sortAsc ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'" class="sort-icon" />
               </div>
-              <div class="filter-wrap">
+              <div v-if="column.filter" class="filter-wrap">
                 <div class="i-lucide-search filter-icon" />
                 <input
                   type="text"
                   class="filter-input"
                   placeholder="Filter..."
-                  :value="table.filter[key]"
-                  @input="(event) => onFilterInput(event, key as string)"
+                  :value="table.filter[column.key]"
+                  @input="(event) => onFilterInput(event, column.key)"
                   @click.stop
                   autocomplete="off"
                 />
               </div>
+              <div v-else class="filter-wrap filter-wrap--empty" />
             </div>
           </div>
 
@@ -136,42 +137,51 @@
               @dblclick="editSelected"
               @contextmenu.prevent="openContextMenu($event, row)"
             >
-              <div v-for="(column, key) in columns" :key="key" class="grid-cell" role="gridcell">
-                <!-- URL -->
-                <template v-if="row[key] && key === 'url'">
-                  <div class="cell-url">
-                    <div class="i-lucide-external-link cell-icon" />
-                    <a :href="row[key]" target="_blank" rel="noopener" class="url-link">{{ row[key] }}</a>
-                  </div>
-                </template>
-                <!-- Password -->
-                <template v-else-if="key === 'password' && row[key]">
-                  <div class="cell-secret">
-                    <div class="i-lucide-lock cell-icon" />
-                    <span v-if="!revealedRows.has(row.id)" class="masked">••••••••</span>
-                    <span v-else class="revealed">{{ row[key] }}</span>
-                    <button class="cell-action-btn" @click.stop="togglePasswordVisibility(row.id)" :aria-label="revealedRows.has(row.id) ? 'Hide password' : 'Show password'">
-                      <div :class="revealedRows.has(row.id) ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
-                    </button>
-                    <button class="cell-action-btn" @click.stop="copyField(row, 'password')" aria-label="Copy password">
-                      <div :class="copiedCells.has('password-' + row.id) ? 'i-lucide-check' : 'i-lucide-copy'" :style="copiedCells.has('password-' + row.id) ? 'color:var(--c-success)' : ''" />
-                    </button>
-                  </div>
-                </template>
-                <!-- Login -->
-                <template v-else-if="key === 'login' && row[key]">
-                  <div class="cell-secret">
-                    <div class="i-lucide-user cell-icon" />
-                    <span class="cell-text">{{ row[key] }}</span>
-                    <button class="cell-action-btn" @click.stop="copyField(row, 'login')" aria-label="Copy login">
-                      <div :class="copiedCells.has('login-' + row.id) ? 'i-lucide-check' : 'i-lucide-copy'" :style="copiedCells.has('login-' + row.id) ? 'color:var(--c-success)' : ''" />
-                    </button>
-                  </div>
-                </template>
-                <!-- Default -->
-                <template v-else>
-                  <span class="cell-text">{{ row[key] }}</span>
-                </template>
+              <!-- Name with the type icon -->
+              <div class="grid-cell" role="gridcell">
+                <div class="cell-name">
+                  <div :class="[entryType(row).icon, 'cell-type-icon']" :title="entryType(row).label" />
+                  <span class="cell-text">{{ row.name }}</span>
+                </div>
+              </div>
+              <!-- Details: the type's summary, with a copy button for its main value -->
+              <div class="grid-cell" role="gridcell">
+                <div v-if="cellValue(row, 'details')" class="cell-secret">
+                  <span class="cell-text">{{ cellValue(row, 'details') }}</span>
+                  <button
+                    v-if="detailsCopy(row)"
+                    class="cell-action-btn"
+                    @click.stop="copyField(row, detailsCopy(row)!.key)"
+                    :aria-label="`Copy ${detailsCopy(row)!.label.toLowerCase()}`"
+                  >
+                    <div :class="copiedCells.has(detailsCopy(row)!.key + '-' + row.id) ? 'i-lucide-check' : 'i-lucide-copy'" :style="copiedCells.has(detailsCopy(row)!.key + '-' + row.id) ? 'color:var(--c-success)' : ''" />
+                  </button>
+                </div>
+              </div>
+              <!-- Main secret -->
+              <div class="grid-cell" role="gridcell">
+                <div v-if="mainSecret(row)?.value" class="cell-secret">
+                  <div class="i-lucide-lock cell-icon" />
+                  <span v-if="!revealedRows.has(row.id)" class="masked">••••••••</span>
+                  <span v-else class="revealed">{{ revealedSecret(row) }}</span>
+                  <button class="cell-action-btn" @click.stop="togglePasswordVisibility(row.id)" :aria-label="(revealedRows.has(row.id) ? 'Hide ' : 'Show ') + mainSecret(row)!.label.toLowerCase()">
+                    <div :class="revealedRows.has(row.id) ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
+                  </button>
+                  <button class="cell-action-btn" @click.stop="copyField(row, mainSecret(row)!.key)" :aria-label="'Copy ' + mainSecret(row)!.label.toLowerCase()">
+                    <div :class="copiedCells.has(mainSecret(row)!.key + '-' + row.id) ? 'i-lucide-check' : 'i-lucide-copy'" :style="copiedCells.has(mainSecret(row)!.key + '-' + row.id) ? 'color:var(--c-success)' : ''" />
+                  </button>
+                </div>
+              </div>
+              <!-- URL -->
+              <div class="grid-cell" role="gridcell">
+                <div v-if="entryUrl(row)" class="cell-url">
+                  <div class="i-lucide-external-link cell-icon" />
+                  <a :href="entryUrl(row)" target="_blank" rel="noopener" class="url-link">{{ entryUrl(row) }}</a>
+                </div>
+              </div>
+              <!-- Notes -->
+              <div class="grid-cell" role="gridcell">
+                <span class="cell-text">{{ row.description }}</span>
               </div>
             </div>
           </TransitionGroup>
@@ -235,7 +245,8 @@
 
   <input type="file" ref="importInput" class="sr-only" @change="importDatabase" />
 
-  <EntryEditModal title="Edit Entry" />
+  <EntryTypePicker v-model="showTypePicker" @pick="newEntry" />
+  <EntryEditModal />
   <RepoSettingsModal />
   <CreateDatabaseModal />
   <!-- After other modals so it stacks on top of them -->
@@ -258,6 +269,8 @@ import { isWithin, pathName, ENTRIES_DRAG_TYPE } from '@/utils/categories'
 import { CONFIRM_KEY, type ConfirmFn } from '@/composables/useConfirm'
 import { useTrashActions } from '@/composables/useTrashActions'
 import type { MenuAction } from '@/types/menu'
+import { entryType, mainSecret, entryUrl, describeField, DEFAULT_TYPE } from '@/types/entryTypes'
+import { formatCardNumber } from '@/utils/card'
 
 import AppSidebar from '@/components/AppSidebar.vue'
 import BottomNav from '@/components/BottomNav.vue'
@@ -267,6 +280,7 @@ import EntryDetailsSheet from '@/components/EntryDetailsSheet.vue'
 import CategoryPanel from '@/components/CategoryPanel.vue'
 import CategoryPickerSheet from '@/components/CategoryPickerSheet.vue'
 import EntryEditModal from '@/components/EntryEditModal.vue'
+import EntryTypePicker from '@/components/EntryTypePicker.vue'
 import EntryHistoryModal from '@/components/EntryHistoryModal.vue'
 import EntryContextMenu from '@/components/EntryContextMenu.vue'
 import RepoSettingsModal from '@/components/RepoSettingsModal.vue'
@@ -282,13 +296,14 @@ const AUTO_LOCK_TIMEOUT = 5 * 60 * 1000
 const THEME_STORAGE_KEY = 'bDarkTheme'
 const TRASH_DAYS = TRASH_RETENTION / (24 * 60 * 60 * 1000)
 
-const COLUMN_WIDTHS: Record<string, string> = {
-  category: '120px',
-  name: 'minmax(120px, 1.5fr)',
-  login: 'minmax(100px, 1fr)',
-  password: 'minmax(180px, 0.8fr)',
-  url: 'minmax(100px, 1.2fr)',
-}
+// Table columns: the same for every entry type (see entryTypes.ts)
+const TABLE_COLUMNS = [
+  { key: 'name', label: 'Name', width: 'minmax(140px, 1.4fr)', filter: true },
+  { key: 'details', label: 'Details', width: 'minmax(120px, 1.2fr)', filter: true },
+  { key: 'secret', label: 'Secret', width: 'minmax(180px, 0.8fr)', filter: false },
+  { key: 'url', label: 'URL', width: 'minmax(100px, 1fr)', filter: true },
+  { key: 'description', label: 'Notes', width: 'minmax(80px, 1fr)', filter: true },
+]
 
 const db = useDatabaseStore()
 const repos = useReposStore()
@@ -318,6 +333,7 @@ const justSaved = ref(false)
 const showShortcuts = ref(false)
 const showChangePassword = ref(false)
 const showMobileMenu = ref(false)
+const showTypePicker = ref(false)
 
 // Mobile layout: card list with a single search field instead of the table
 const isMobile = useMediaQuery(MOBILE_QUERY)
@@ -328,7 +344,7 @@ const detailsEntry = ref<Entry | null>(null)
 const historyEntry = ref<Entry | null>(null)
 
 // --- categories ---
-const { selectOnly, selectTrash, trashSelected, effectiveSelection, effectiveSelections } = useCategoryState()
+const { selectOnly, selectTrash, trashSelected, typeFilter, effectiveSelection, effectiveSelections } = useCategoryState()
 // Deleted entries are listed instead of a category
 const isTrashView = computed(() => trashSelected.value)
 // Primary selected category: null = all, '' = uncategorized
@@ -336,6 +352,10 @@ const activeCategory = computed(() => effectiveSelection(db.categoryPaths))
 // Every selected category the list is filtered by ([null] = all entries)
 const activeCategories = computed(() => effectiveSelections(db.categoryPaths))
 const categoryLabel = computed(() => {
+  const type = typeFilter.value && entryType({ type: typeFilter.value }).label
+  return type ? `${placeLabel.value} · ${type}` : placeLabel.value
+})
+const placeLabel = computed(() => {
   if (isTrashView.value) return 'Trash'
   const categories = activeCategories.value
   if (categories.length > 1) return `${categories.length} categories`
@@ -374,16 +394,31 @@ const sortAsc = ref(true)
 const contextMenu = reactive({ entry: null as any, x: 0, y: 0 })
 
 // --- computed ---
-// Table columns (category is shown as the tree instead)
-const columns = computed(() =>
-  Object.fromEntries(Object.entries(db.columns).filter(([, column]) => column.inTable))
-)
 const table = computed(() => db.table)
 
-const gridStyle = computed(() => {
-  const widths = Object.keys(columns.value).map((key) => COLUMN_WIDTHS[key] ?? 'minmax(80px, 1fr)')
-  return { display: 'grid', gridTemplateColumns: widths.join(' ') }
-})
+const gridStyle = { display: 'grid', gridTemplateColumns: TABLE_COLUMNS.map((column) => column.width).join(' ') }
+
+/** Text of a table column for an entry (used for display, filtering and sorting) */
+function cellValue(entry: Entry, key: string): string {
+  switch (key) {
+    case 'details': return entryType(entry).details(entry)
+    case 'secret': return mainSecret(entry)?.value ?? ''
+    case 'url': return entryUrl(entry)
+    default: return String(entry[key] ?? '')
+  }
+}
+
+/** Field copied by the button in the Details column (its main non-secret value) */
+function detailsCopy(entry: Entry) {
+  const type = entryType(entry)
+  const key = type.quickCopy.find((k) => k !== type.secret && entry[k])
+  return key ? { key, label: describeField(entry, key).label } : null
+}
+
+function revealedSecret(entry: Entry): string {
+  const secret = mainSecret(entry)!
+  return secret.key === 'card_number' ? formatCardNumber(secret.value) : secret.value
+}
 
 // Height of the scrollable table area, kept up to date by a ResizeObserver
 const tableHeight = ref(window.innerHeight - 100)
@@ -396,14 +431,17 @@ const page = computed({
   set: (value) => { table.value.page = Number(value) },
 })
 
+// Search covers every field of an entry, custom ones included
 function matchesSearch(entry: Entry, query: string): boolean {
-  return Object.keys(db.columns).some((key) => String(entry[key] ?? '').toLowerCase().includes(query))
+  return Object.entries(entry).some(([key, value]) =>
+    key !== 'type' && typeof value === 'string' && value.toLowerCase().includes(query))
 }
 
 const filteredRows = computed(() => {
   let rows = isTrashView.value
     ? db.trash.map((item) => item.entry)
     : table.value.data.filter(inActiveCategory)
+  if (typeFilter.value) rows = rows.filter((entry) => entryType(entry).id === typeFilter.value)
   if (isMobile.value) {
     // Column filters are not visible on mobile — use the search field only
     const query = searchQuery.value.trim().toLowerCase()
@@ -411,16 +449,16 @@ const filteredRows = computed(() => {
   } else {
     // Only filters of visible columns apply (a stored filter on a hidden column is ignored)
     const filter = table.value.filter
-    const keys = Object.keys(columns.value).filter((key) => filter[key])
-    rows = rows.filter((entry) => keys.every((key) => String(entry[key] ?? '').includes(filter[key])))
+    const keys = TABLE_COLUMNS.filter((column) => column.filter && filter[column.key]).map((column) => column.key)
+    rows = rows.filter((entry) => keys.every((key) => cellValue(entry, key).includes(filter[key])))
   }
 
   if (sortKey.value) {
     const key = sortKey.value
     const direction = sortAsc.value ? 1 : -1
     rows = [...rows].sort((a: any, b: any) => {
-      const left = (a[key] ?? '').toString().toLowerCase()
-      const right = (b[key] ?? '').toString().toLowerCase()
+      const left = cellValue(a, key).toLowerCase()
+      const right = cellValue(b, key).toLowerCase()
       if (left < right) return -direction
       if (left > right) return direction
       return 0
@@ -448,8 +486,10 @@ function goToLastPage() { page.value = pageCount.value }
 function goToNextPage() { if (page.value < pageCount.value) page.value += 1 }
 
 // --- table ---
-async function copyField(entry: any, field: 'login' | 'password') {
-  const text = entry?.[field]
+async function copyField(entry: any, field: string) {
+  const raw = entry?.[field] ?? ''
+  // Card numbers are stored with spaces for reading; copy the digits
+  const text = describeField(entry ?? {}, field).kind === 'card_number' ? raw.replace(/\D/g, '') : raw
   if (!text) return
   try {
     await copySecret(text)
@@ -622,10 +662,16 @@ function selectPrev() {
 }
 
 // --- entry actions ---
+/** Ask for the type of the new entry (or use the type the list is filtered by) */
 function addEntry() {
+  if (typeFilter.value) newEntry(typeFilter.value)
+  else showTypePicker.value = true
+}
+
+function newEntry(type = DEFAULT_TYPE) {
   // A new entry would be invisible in the trash
   if (isTrashView.value) selectOnly(null)
-  db.openEditWindow({})
+  db.openEditWindow({}, type)
 }
 
 function notifyNoSelection() {
@@ -694,7 +740,7 @@ function restoreHistory(fields: Record<string, string>) {
   const entry = historyEntry.value
   if (!entry) return
   db.restoreFields(entry.id!, fields)
-  notify('Restored', Object.keys(fields).length === 1 ? `${db.columns[Object.keys(fields)[0]]?.label ?? 'Field'} restored` : 'Previous version restored', 'success', 2000)
+  notify('Restored', Object.keys(fields).length === 1 ? `${describeField(entry, Object.keys(fields)[0]).label} restored` : 'Previous version restored', 'success', 2000)
 }
 
 function clearHistory() {
@@ -857,6 +903,7 @@ async function lockApp() {
   showMobileMenu.value = false
   detailsEntry.value = null
   historyEntry.value = null
+  showTypePicker.value = false
   categoryPicker.value = null
   searchQuery.value = ''
   try {
@@ -888,7 +935,7 @@ function onKeydown(event: KeyboardEvent) {
   }
   if (event.ctrlKey && event.key === 'n') {
     event.preventDefault()
-    addEntry()
+    newEntry()
   }
   if (event.ctrlKey && event.key === 'f') {
     event.preventDefault()
@@ -1167,6 +1214,10 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.filter-wrap--empty {
+  height: 28px;
+}
+
 .filter-icon {
   position: absolute;
   left: 6px;
@@ -1205,6 +1256,19 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cell-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cell-type-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  color: var(--c-text-muted);
 }
 
 .cell-url {

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { downloadJson } from '@/utils/download'
-import { DecryptionError } from '@/utils/crypto'
+import { DecryptionError, UnsupportedVersionError } from '@/utils/crypto'
 import { NotFoundError, ConflictError, AuthError, decryptJson, type FileSystemDriver } from '@/services/FileSystemDriver'
 import { addBackup, backupKey } from '@/services/backups'
 import { mergeDatabases, type MergeStats } from '@/utils/merge'
@@ -9,11 +9,19 @@ import {
   normalizePath, parentPath, pathName, joinPath, isWithin, replacePrefix, collectPaths, buildTree,
 } from '@/utils/categories'
 import { useReposStore } from './repos'
+import {
+  DEFAULT_TYPE, entryType, typeById, customKey, newCustomId, toCustomKind,
+  CUSTOM_FIELD_KINDS, type CustomField, type CustomFieldKind,
+} from '@/types/entryTypes'
 
 export const DATABASE_PATH = 'passwords-database'
 
 export interface Entry {
   id?: number
+  // Entry type id (see ENTRY_TYPES); missing = login
+  type?: string
+  // Fields added by the user; values are stored under customKey(id)
+  custom?: CustomField[]
   // Previous values of changed fields, oldest first
   history?: HistoryVersion[]
   [field: string]: any
@@ -28,13 +36,6 @@ export interface HistoryVersion {
 export interface TrashItem {
   entry: Entry
   deleted_at: number
-}
-
-export interface Column {
-  label: string
-  type: string
-  // Shown as a table column (category is shown as the tree instead)
-  inTable: boolean
 }
 
 export interface Table {
@@ -54,22 +55,14 @@ export interface Database {
   table: Table
 }
 
-// Table columns in display order
-export const COLUMNS: Record<string, Column> = {
-  category: { label: 'Category', type: 'category', inTable: false },
-  name: { label: 'Name', type: 'text', inTable: true },
-  login: { label: 'Login', type: 'text', inTable: true },
-  password: { label: 'Password', type: 'password', inTable: true },
-  url: { label: 'URL', type: 'text', inTable: true },
-  description: { label: 'Description', type: 'textarea', inTable: true },
-}
-
 // Versions kept per entry
 export const HISTORY_LIMIT = 20
 // Entries in the trash are deleted for good after this time
 export const TRASH_RETENTION = 30 * 24 * 60 * 60 * 1000
-// Fields whose changes are recorded (moving to another category is not)
-const HISTORY_FIELDS = Object.keys(COLUMNS).filter((name) => name !== 'category')
+// Properties of an entry that are not field values
+const NON_FIELD_KEYS = new Set(['id', 'type', 'custom', 'history'])
+// Field changes not recorded in the history (moving to another category)
+const UNRECORDED_FIELDS = new Set(['category'])
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -101,8 +94,10 @@ export interface SaveResult {
 
 const cloneDatabase = (database: Database): Database => JSON.parse(JSON.stringify(database))
 
-function emptyFields(): Record<string, string> {
-  return Object.fromEntries(Object.keys(COLUMNS).map((name) => [name, '']))
+/** Form values of a new entry of a type: Category, Name and the type's fields */
+function emptyForm(type = DEFAULT_TYPE): Record<string, string> {
+  const fields = typeById(type)?.fields ?? []
+  return Object.fromEntries(['category', 'name', ...fields.map((field) => field.key)].map((key) => [key, '']))
 }
 
 function createEmptyDatabase(): Database {
@@ -112,7 +107,7 @@ function createEmptyDatabase(): Database {
       page: 1,
       data: [],
       selection_id: null,
-      filter: emptyFields(),
+      filter: {},
       categories: [],
       trash: [],
     },
@@ -172,7 +167,7 @@ export function normalizeDatabase(parsed: any, now = Date.now()): Database {
     if (entry.id === undefined) entry.id = ++lastIndex
   }
 
-  const filter = emptyFields()
+  const filter: Record<string, string> = {}
   if (table.filter && typeof table.filter === 'object') {
     for (const [key, value] of Object.entries(table.filter)) {
       if (typeof value === 'string') filter[key] = value
@@ -202,10 +197,33 @@ function normalizeEntry(entry: unknown, name: string): Entry {
   for (const [key, value] of Object.entries(entry)) {
     if (key === 'id') result.id = value
     else if (key === 'history') result.history = normalizeHistory(value)
+    else if (key === 'custom') result.custom = normalizeCustom(value)
     else result[key] = value == null ? '' : String(value)
   }
   if ('category' in result) result.category = normalizePath(result.category)
   if (!result.history?.length) delete result.history
+  if (!result.custom?.length) delete result.custom
+  if (!result.type) delete result.type
+  return result
+}
+
+const CUSTOM_KINDS = new Set(CUSTOM_FIELD_KINDS.map((item) => item.kind))
+
+/** Keep well-formed custom fields with unique ids */
+function normalizeCustom(value: unknown): CustomField[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const result: CustomField[] = []
+  for (const field of value) {
+    const id = typeof field?.id === 'string' ? field.id : ''
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    result.push({
+      id,
+      label: typeof field.label === 'string' ? field.label : '',
+      kind: CUSTOM_KINDS.has(field.kind) ? field.kind : 'text',
+    })
+  }
   return result
 }
 
@@ -233,7 +251,7 @@ export function changeEntry(entry: Entry, values: Record<string, string>, now = 
   for (const [field, value] of Object.entries(values)) {
     const old = entry[field] ?? ''
     if (old === value) continue
-    if (HISTORY_FIELDS.includes(field)) previous[field] = old
+    if (!UNRECORDED_FIELDS.has(field) && !NON_FIELD_KEYS.has(field)) previous[field] = old
     entry[field] = value
     changed = true
   }
@@ -261,7 +279,10 @@ export const useDatabaseStore = defineStore('database', () => {
   const database = ref<Database>(createEmptyDatabase())
 
   // Values of the entry edit form
-  const form = ref<Record<string, string>>(emptyFields())
+  const form = ref<Record<string, string>>(emptyForm())
+  // Type and custom fields of the entry in the edit form
+  const formType = ref(DEFAULT_TYPE)
+  const formCustom = ref<CustomField[]>([])
 
   // Entry being edited ({} while adding a new one)
   const editWindow = ref(createClosedEditWindow())
@@ -307,11 +328,66 @@ export const useDatabaseStore = defineStore('database', () => {
     database.value = newDatabase
   }
 
-  function openEditWindow(item: Entry) {
+  /** Edit an entry; a new one (`{}`) gets `type` */
+  function openEditWindow(item: Entry, type = DEFAULT_TYPE) {
     editWindow.value = { isOpen: true, item }
-    for (const fieldName in form.value) {
-      form.value[fieldName] = fieldName in item ? item[fieldName] : ''
+    formType.value = item.id ? entryType(item).id : (typeById(type)?.id ?? DEFAULT_TYPE)
+    formCustom.value = (item.custom ?? []).map((field) => ({ ...field }))
+    const values = emptyForm(formType.value)
+    for (const field of formCustom.value) values[customKey(field.id)] = ''
+    for (const key of Object.keys(values)) {
+      if (typeof item[key] === 'string') values[key] = item[key]
     }
+    form.value = values
+  }
+
+  /**
+   * Change the type in the form. Fields both types have keep their values; filled
+   * fields the new type lacks become custom fields, so nothing is lost.
+   */
+  function setFormType(type: string) {
+    const from = typeById(formType.value)
+    const to = typeById(type)
+    if (!to || !from || from.id === to.id) return
+    const keep = new Set(to.fields.map((field) => field.key))
+    for (const field of from.fields) {
+      if (keep.has(field.key)) continue
+      const value = form.value[field.key] ?? ''
+      delete form.value[field.key]
+      if (!value) continue
+      const id = newCustomId()
+      formCustom.value.push({ id, label: field.label, kind: toCustomKind(field.kind) })
+      form.value[customKey(id)] = value
+    }
+    for (const field of to.fields) form.value[field.key] ??= ''
+    formType.value = to.id
+  }
+
+  function addCustomField(kind: CustomFieldKind = 'text', label = '') {
+    const id = newCustomId()
+    formCustom.value.push({ id, label, kind })
+    form.value[customKey(id)] = ''
+    return id
+  }
+
+  function updateCustomField(id: string, changes: Partial<Omit<CustomField, 'id'>>) {
+    const field = formCustom.value.find((f) => f.id === id)
+    if (field) Object.assign(field, changes)
+  }
+
+  function removeCustomField(id: string) {
+    formCustom.value = formCustom.value.filter((field) => field.id !== id)
+    delete form.value[customKey(id)]
+  }
+
+  /** Move a custom field one place up (-1) or down (+1) */
+  function moveCustomField(id: string, offset: -1 | 1) {
+    const fields = [...formCustom.value]
+    const index = fields.findIndex((field) => field.id === id)
+    const target = index + offset
+    if (index === -1 || target < 0 || target >= fields.length) return
+    ;[fields[index], fields[target]] = [fields[target], fields[index]]
+    formCustom.value = fields
   }
 
   function closeEditWindow() {
@@ -324,15 +400,41 @@ export const useDatabaseStore = defineStore('database', () => {
    */
   function saveEditWindow() {
     const item = editWindow.value.item
-    const values = { ...form.value, category: normalizePath(form.value.category) }
+    const type = typeById(formType.value) ?? entryType(null)
+    const custom = formCustom.value.map((field) => ({ ...field, label: field.label.trim() }))
+    const keys = ['category', 'name', ...type.fields.map((field) => field.key), ...custom.map((field) => customKey(field.id))]
+    const values: Record<string, string> = Object.fromEntries(keys.map((key) => [key, form.value[key] ?? '']))
+    values.category = normalizePath(values.category)
+
     if (!item.id) {
-      Object.assign(item, values)
+      Object.assign(item, Object.fromEntries(Object.entries(values).filter(([, value]) => value !== '')))
+      item.type = type.id
+      if (custom.length) item.custom = custom
       item.id = ++table.value.last_index
       table.value.data.push(item)
-    } else if (!changeEntry(item, values)) {
+      unsavedChanges.value++
       return
     }
-    unsavedChanges.value++
+
+    // Fields the entry has but its (new) type and custom fields don't are cleared
+    for (const [key, value] of Object.entries(item)) {
+      if (!NON_FIELD_KEYS.has(key) && typeof value === 'string' && !(key in values)) values[key] = ''
+    }
+    let changed = changeEntry(item, values)
+    if (entryType(item).id !== type.id) {
+      item.type = type.id
+      changed = true
+    }
+    if (JSON.stringify(item.custom ?? []) !== JSON.stringify(custom)) {
+      if (custom.length) item.custom = custom
+      else delete item.custom
+      changed = true
+    }
+    // Drop emptied fields that are no longer part of the entry
+    for (const [key, value] of Object.entries(item)) {
+      if (value === '' && !keys.includes(key)) delete item[key]
+    }
+    if (changed) unsavedChanges.value++
   }
 
   function findEntry(id: number): Entry {
@@ -595,7 +697,9 @@ export const useDatabaseStore = defineStore('database', () => {
     try {
       data = await fileSystem.readEncryptedJson(DATABASE_PATH, masterPassword.value)
     } catch (error) {
-      if (error instanceof DecryptionError) {
+      if (error instanceof UnsupportedVersionError) {
+        showConnectionError(error.message)
+      } else if (error instanceof DecryptionError) {
         showConnectionError('Incorrect password (or the database file is damaged). Please check your master password and try again.')
       } else if (error instanceof NotFoundError) {
         // Ask before creating: the master password just typed will protect it
@@ -662,7 +766,8 @@ export const useDatabaseStore = defineStore('database', () => {
     baseDatabase = null
     isCreatePending.value = false
     database.value = createEmptyDatabase()
-    form.value = emptyFields()
+    form.value = emptyForm()
+    formCustom.value = []
     editWindow.value = createClosedEditWindow()
     unsavedChanges.value = 0
     isRepoWindowOpen.value = true
@@ -672,7 +777,8 @@ export const useDatabaseStore = defineStore('database', () => {
 
   return {
     masterPassword,
-    columns: COLUMNS,
+    formType,
+    formCustom,
     database,
     table,
     categoryPaths,
@@ -690,6 +796,11 @@ export const useDatabaseStore = defineStore('database', () => {
     setFilter,
     setDatabase,
     openEditWindow,
+    setFormType,
+    addCustomField,
+    updateCustomField,
+    removeCustomField,
+    moveCustomField,
     closeEditWindow,
     saveEditWindow,
     removeEntry,

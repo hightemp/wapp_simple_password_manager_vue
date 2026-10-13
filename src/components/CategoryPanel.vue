@@ -42,6 +42,7 @@
         @select-trash="selectTrash"
         @trash-entries="moveToTrash"
       />
+      <TypeFilterList />
     </div>
 
     <!-- Drag to resize -->
@@ -64,6 +65,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useTrashActions } from '@/composables/useTrashActions'
 import { parentPath, isWithin } from '@/utils/categories'
 import CategoryTree from './CategoryTree.vue'
+import TypeFilterList from './TypeFilterList.vue'
 
 const db = useDatabaseStore()
 const notify = useNotify()

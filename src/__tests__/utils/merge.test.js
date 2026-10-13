@@ -158,3 +158,36 @@ describe('mergeDatabases', () => {
     expect(byId(database, 5).name).toBe('Only there')
   })
 })
+
+describe('mergeDatabases — types and custom fields', () => {
+  const base = db([{ id: 1, name: 'Card', type: 'card', custom: [{ id: 'a', label: 'Word', kind: 'secret' }], 'custom:a': 'w1' }])
+
+  it('should merge custom field definitions and values', () => {
+    const ours = clone(base)
+    ours.table.data[0].custom.push({ id: 'b', label: 'Mine', kind: 'text' })
+    ours.table.data[0]['custom:b'] = 'x'
+    const theirs = clone(base)
+    theirs.table.data[0].custom[0].label = 'Code word'
+    theirs.table.data[0]['custom:a'] = 'w2'
+
+    const entry = mergeDatabases(base, ours, theirs).database.table.data[0]
+    expect(entry.custom).toEqual([{ id: 'a', label: 'Code word', kind: 'secret' }, { id: 'b', label: 'Mine', kind: 'text' }])
+    expect(entry['custom:a']).toBe('w2')
+    expect(entry['custom:b']).toBe('x')
+  })
+
+  it('should drop a custom field removed on one side', () => {
+    const ours = clone(base)
+    delete ours.table.data[0].custom
+    delete ours.table.data[0]['custom:a']
+    const entry = mergeDatabases(base, ours, clone(base)).database.table.data[0]
+    expect(entry.custom).toBeUndefined()
+    expect(entry['custom:a'] ?? '').toBe('')
+  })
+
+  it('should take a type change from the other side', () => {
+    const theirs = clone(base)
+    theirs.table.data[0].type = 'secure_note'
+    expect(mergeDatabases(base, clone(base), theirs).database.table.data[0].type).toBe('secure_note')
+  })
+})

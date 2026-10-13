@@ -13,7 +13,11 @@
  *
  * v1 (legacy, read-only): raw 3DES ciphertext from CryptoJS.TripleDES.
  *
- * Writing always produces v3; v1/v2 files are migrated on the next save.
+ * v4 (current): the v3 envelope with `v: 4`. The cipher is the same; the version marks
+ *   databases with entry types and custom fields, so app versions from before them
+ *   (which only know v1–v3) refuse to open — and overwrite — such a file.
+ *
+ * Writing always produces v4; v1–v3 files are migrated on the next save.
  */
 import CryptoJS from 'crypto-js'
 import DES from 'crypto-js/tripledes.js'
@@ -26,6 +30,17 @@ const V3_IV_BYTES = 12 // standard GCM nonce size
 const V2_ITERATIONS = 100_000
 const V2_KEY_WORDS = 256 / 32
 
+// Version written by encrypt()
+export const CURRENT_VERSION = 4
+
+/** The file was written by a newer version of the app */
+export class UnsupportedVersionError extends Error {
+  constructor(public version: number) {
+    super('The database was saved by a newer version of the app. Reload the page to update it.')
+    this.name = 'UnsupportedVersionError'
+  }
+}
+
 /** Wrong password, or the data is corrupted / was tampered with */
 export class DecryptionError extends Error {
   constructor(message = 'Incorrect password or corrupted data') {
@@ -35,7 +50,7 @@ export class DecryptionError extends Error {
 }
 
 export interface V3Envelope {
-  v: 3
+  v: 3 | 4
   kdf: 'PBKDF2-SHA256'
   iterations: number
   salt: string
@@ -64,9 +79,9 @@ export interface PasswordOptions {
 // Public API
 // ===============================================================
 
-/** Encrypt data (always v3 format) */
+/** Encrypt data (always the current format) */
 export function encrypt(data: string, password: string): Promise<string> {
-  return encryptV3(data, password)
+  return encryptV3(data, password, V3_ITERATIONS, CURRENT_VERSION)
 }
 
 /**
@@ -75,7 +90,7 @@ export function encrypt(data: string, password: string): Promise<string> {
  */
 export async function decrypt(data: string, password: string): Promise<string> {
   const envelope = parseEnvelope(data)
-  if (envelope?.v === 3) return decryptV3(envelope, password)
+  if (envelope?.v === 3 || envelope?.v === 4) return decryptV3(envelope, password)
 
   let decrypted = ''
   try {
@@ -90,9 +105,11 @@ export async function decrypt(data: string, password: string): Promise<string> {
 function parseEnvelope(data: string): V3Envelope | V2Envelope | null {
   try {
     const parsed = JSON.parse(data)
-    if (parsed?.v === 3 && parsed.data && parsed.salt && parsed.iv && parsed.iterations) return parsed
+    if (Number.isInteger(parsed?.v) && parsed.v > CURRENT_VERSION) throw new UnsupportedVersionError(parsed.v)
+    if ((parsed?.v === 3 || parsed?.v === 4) && parsed.data && parsed.salt && parsed.iv && parsed.iterations) return parsed
     if (parsed?.v === 2 && parsed.data && parsed.salt && parsed.iv) return parsed
-  } catch (_) {
+  } catch (error) {
+    if (error instanceof UnsupportedVersionError) throw error
     // Not JSON — v1
   }
   return null
@@ -121,14 +138,14 @@ async function deriveKeyV3(password: string, salt: Uint8Array<ArrayBuffer>, iter
   )
 }
 
-export async function encryptV3(data: string, password: string, iterations = V3_ITERATIONS): Promise<string> {
+export async function encryptV3(data: string, password: string, iterations = V3_ITERATIONS, version: 3 | 4 = 3): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(V3_SALT_BYTES))
   const iv = crypto.getRandomValues(new Uint8Array(V3_IV_BYTES))
   const key = await deriveKeyV3(password, salt, iterations)
   const ciphertext = await getSubtle().encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(data))
 
   return JSON.stringify({
-    v: 3,
+    v: version,
     kdf: 'PBKDF2-SHA256',
     iterations,
     salt: toBase64(salt),

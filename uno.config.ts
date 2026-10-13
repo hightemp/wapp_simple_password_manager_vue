@@ -1,6 +1,12 @@
 import { defineConfig, presetUno, presetIcons, transformerDirectives } from 'unocss'
 
 export default defineConfig({
+  content: {
+    pipeline: {
+      // Icon classes of entry types are defined in src/types/*.ts
+      include: [/\.(vue|html)($|\?)/, /src\/types\/.*\.ts($|\?)/],
+    },
+  },
   presets: [
     presetUno(),
     presetIcons({

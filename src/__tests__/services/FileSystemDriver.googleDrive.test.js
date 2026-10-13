@@ -165,7 +165,7 @@ describe('FileSystemDriver — googledrive type', () => {
 
     await driver.writeEncryptedJson('passwords-database', data, password)
     const parsed = JSON.parse(drive.content)
-    expect(parsed.v).toBe(3)
+    expect(parsed.v).toBe(4)
     expect(parsed.salt).toBeTruthy()
 
     const result = await driver.readEncryptedJson('passwords-database', password)

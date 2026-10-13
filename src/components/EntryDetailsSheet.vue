@@ -6,46 +6,46 @@
     @update:model-value="(open) => !open && emit('close')"
   >
     <dl v-if="entry" class="details">
-      <template v-for="(column, key) in columns" :key="key">
-        <!-- Name is already the sheet title -->
-        <div v-if="(entry[key] || key === 'category') && key !== 'name'" class="details-row" :data-field="key">
-          <dt class="details-label">{{ column.label }}</dt>
+      <div class="details-type">
+        <div :class="type.icon" /> {{ type.label }}
+      </div>
+
+      <!-- Category: shown even when empty, with a button to move the entry -->
+      <div class="details-row" data-field="category">
+        <dt class="details-label">Category</dt>
+        <dd class="details-value">
+          <span :class="['details-text', { 'details-empty': !entry.category }]">{{ entry.category || 'Uncategorized' }}</span>
+          <button v-if="!inTrash" class="details-btn" aria-label="Change category" @click="emit('change-category')">
+            <div class="i-lucide-folder-input" />
+          </button>
+        </dd>
+      </div>
+
+      <template v-for="field in fields" :key="field.key">
+        <div v-if="entry[field.key]" class="details-row" :data-field="field.key">
+          <dt class="details-label">{{ field.label }}</dt>
           <dd class="details-value">
-            <!-- Category: shown even when empty, with a button to move the entry -->
-            <template v-if="key === 'category'">
-              <span :class="['details-text', { 'details-empty': !entry[key] }]">{{ entry[key] || 'Uncategorized' }}</span>
-              <button v-if="!inTrash" class="details-btn" aria-label="Change category" @click="emit('change-category')">
-                <div class="i-lucide-folder-input" />
-              </button>
-            </template>
-            <!-- Password -->
-            <template v-else-if="key === 'password'">
-              <span :class="['details-text', 'details-secret', { masked: !isPasswordVisible }]">
-                {{ isPasswordVisible ? entry[key] : '••••••••' }}
+            <!-- Secrets: masked until shown -->
+            <template v-if="isSecretKind(field.kind)">
+              <span :class="['details-text', 'details-secret', { masked: !revealed.has(field.key), 'details-multiline': field.kind === 'secret_multiline' && revealed.has(field.key) }]">
+                {{ revealed.has(field.key) ? display(field) : '••••••••' }}
               </span>
-              <button class="details-btn" :aria-label="isPasswordVisible ? 'Hide password' : 'Show password'" @click="isPasswordVisible = !isPasswordVisible">
-                <div :class="isPasswordVisible ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
-              </button>
-              <button class="details-btn" aria-label="Copy password" @click="emit('copy', 'password')">
-                <div class="i-lucide-copy" />
+              <button class="details-btn" :aria-label="revealed.has(field.key) ? `Hide ${field.label.toLowerCase()}` : `Show ${field.label.toLowerCase()}`" @click="toggle(field.key)">
+                <div :class="revealed.has(field.key) ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
               </button>
             </template>
-            <!-- Login -->
-            <template v-else-if="key === 'login'">
-              <span class="details-text">{{ entry[key] }}</span>
-              <button class="details-btn" aria-label="Copy login" @click="emit('copy', 'login')">
-                <div class="i-lucide-copy" />
-              </button>
+            <!-- Links -->
+            <template v-else-if="field.kind === 'url' || field.kind === 'email' || field.kind === 'phone'">
+              <a :href="href(field)" target="_blank" rel="noopener" class="details-text details-link">{{ entry[field.key] }}</a>
             </template>
-            <!-- URL -->
-            <template v-else-if="key === 'url'">
-              <a :href="entry[key]" target="_blank" rel="noopener" class="details-text details-link">{{ entry[key] }}</a>
-              <a :href="entry[key]" target="_blank" rel="noopener" class="details-btn" aria-label="Open URL">
-                <div class="i-lucide-external-link" />
-              </a>
-            </template>
-            <!-- Everything else, incl. multi-line description -->
-            <span v-else class="details-text details-multiline">{{ entry[key] }}</span>
+            <span v-else :class="['details-text', { 'details-multiline': field.kind === 'multiline' }]">{{ display(field) }}</span>
+
+            <a v-if="field.kind === 'url'" :href="entry[field.key]" target="_blank" rel="noopener" class="details-btn" aria-label="Open URL">
+              <div class="i-lucide-external-link" />
+            </a>
+            <button v-else class="details-btn" :aria-label="`Copy ${field.label.toLowerCase()}`" @click="emit('copy', field.key)">
+              <div class="i-lucide-copy" />
+            </button>
           </dd>
         </div>
       </template>
@@ -64,7 +64,7 @@
         <button class="action-btn action-btn--danger" @click="emit('delete')">
           <div class="i-lucide-trash-2" /> Delete
         </button>
-        <button class="action-btn action-btn--ghost" @click="emit('history')">
+        <button class="action-btn action-btn--ghost" aria-label="History" @click="emit('history')">
           <div class="i-lucide-history" /> History
         </button>
         <button class="action-btn action-btn--primary" @click="emit('edit')">
@@ -76,8 +76,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { COLUMNS, type Entry } from '@/stores/database'
+import { computed, reactive, watch } from 'vue'
+import type { Entry } from '@/stores/database'
+import { entryType, entryFields, isSecretKind, formatDate, type FieldDef } from '@/types/entryTypes'
+import { formatCardNumber } from '@/utils/card'
 import BaseModal from './BaseModal.vue'
 
 const props = defineProps<{
@@ -88,7 +90,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'copy', field: 'login' | 'password'): void
+  (e: 'copy', field: string): void
   (e: 'edit'): void
   (e: 'change-category'): void
   (e: 'delete'): void
@@ -97,17 +99,47 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-const columns = COLUMNS
-const isPasswordVisible = ref(false)
+const type = computed(() => entryType(props.entry))
+// Fields of the entry except Name (it is the sheet title)
+const fields = computed(() => (props.entry ? entryFields(props.entry, type.value) : []))
 
-// Always open with the password hidden
-watch(() => props.entry, () => { isPasswordVisible.value = false })
+// Revealed secrets; the sheet always opens with all of them hidden
+const revealed = reactive(new Set<string>())
+watch(() => props.entry, () => revealed.clear())
+
+function toggle(key: string) {
+  if (revealed.has(key)) revealed.delete(key)
+  else revealed.add(key)
+}
+
+function display(field: FieldDef): string {
+  const value = props.entry?.[field.key] ?? ''
+  if (field.kind === 'date') return formatDate(value)
+  if (field.kind === 'card_number') return formatCardNumber(value)
+  return value
+}
+
+function href(field: FieldDef): string {
+  const value = props.entry?.[field.key] ?? ''
+  if (field.kind === 'email') return `mailto:${value}`
+  if (field.kind === 'phone') return `tel:${value.replace(/[^\d+]/g, '')}`
+  return value
+}
 </script>
 
 <style scoped>
 .details {
   display: flex;
   flex-direction: column;
+}
+
+.details-type {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--c-accent);
+  font-weight: 600;
 }
 
 .details-row {

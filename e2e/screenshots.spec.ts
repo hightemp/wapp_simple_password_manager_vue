@@ -12,6 +12,12 @@ const IMAGES_DIR = path.resolve(__dirname, '..', 'images')
 
 // Demo data: fictional accounts with nested categories
 const DEMO_ENTRIES = [
+  // Other entry types first, so the main screenshot shows them
+  { type: 'api_key', category: 'Work/Dev', name: 'Stripe', api_key: 'sk_live_51Hdemo0000000000', environment: 'production', expires: '2027-01-31', url: 'https://dashboard.stripe.com', description: 'Payments API' },
+  { type: 'card', category: 'Finance/Banking', name: 'Visa Gold', cardholder: 'JOHN DOE', card_number: '4242 4242 4242 4242', card_expiry: '12/27', cvv: '123', bank: 'Chase', description: 'Travel card' },
+  { type: 'secure_note', category: 'Personal', name: 'Router recovery codes', note: 'admin / 7Kq-29x-PLm\nBackup: 51-88-03-17' },
+  { type: 'identity', category: 'Personal', name: 'John Doe', full_name: 'John Doe', email: 'john.doe@gmail.com', phone: '+1 555 0100', company: 'Contoso' },
+  { type: 'address', category: 'Personal', name: 'Home', country: 'USA', city: 'Seattle', street: 'Pine Street', building: '1200, apt 5', postal_code: '98101' },
   { category: 'Work/Email', name: 'Outlook', login: 'j.doe@contoso.com', password: '0utl00k_M@1l#2026', url: 'https://outlook.office.com', description: 'Work mailbox' },
   { category: 'Work/Email', name: 'ProtonMail', login: 'jdoe@proton.me', password: 'Pr0t0n#Encrypted!', url: 'https://proton.me', description: 'Encrypted mail' },
   { category: 'Work/Dev', name: 'GitHub', login: 'johndoe-dev', password: 'G1tHub#T0ken_2026', url: 'https://github.com', description: 'Code repositories' },

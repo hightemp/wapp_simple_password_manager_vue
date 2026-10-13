@@ -88,7 +88,7 @@ describe('FileSystemDriver', () => {
       // Verify it's actually in v3 format now
       const stored = localStorageMock.getItem('passwords-database')
       const parsed = JSON.parse(stored)
-      expect(parsed.v).toBe(3)
+      expect(parsed.v).toBe(4)
       expect(parsed.salt).toBeTruthy()
     })
 

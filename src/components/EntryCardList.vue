@@ -21,28 +21,22 @@
     >
       <div class="entry-card-main">
         <div class="entry-card-title-row">
+          <div :class="[entryType(entry).icon, 'entry-card-type']" :title="entryType(entry).label" />
           <span class="entry-card-name">{{ entry.name || '(no name)' }}</span>
           <span v-if="entry.category" class="entry-card-category">{{ entry.category }}</span>
         </div>
-        <span v-if="entry.login" class="entry-card-login">{{ entry.login }}</span>
+        <span v-if="entryType(entry).details(entry)" class="entry-card-login">{{ entryType(entry).details(entry) }}</span>
       </div>
 
       <div class="entry-card-actions">
         <button
-          v-if="entry.login"
+          v-for="item in quickCopy(entry)"
+          :key="item.key"
           class="entry-card-btn"
-          aria-label="Copy login"
-          @click.stop="emit('copy', entry, 'login')"
+          :aria-label="`Copy ${item.label.toLowerCase()}`"
+          @click.stop="emit('copy', entry, item.key)"
         >
-          <div :class="copiedCells.has('login-' + entry.id) ? 'i-lucide-check copied' : 'i-lucide-user'" />
-        </button>
-        <button
-          v-if="entry.password"
-          class="entry-card-btn"
-          aria-label="Copy password"
-          @click.stop="emit('copy', entry, 'password')"
-        >
-          <div :class="copiedCells.has('password-' + entry.id) ? 'i-lucide-check copied' : 'i-lucide-key-round'" />
+          <div :class="copiedCells.has(item.key + '-' + entry.id) ? 'i-lucide-check copied' : item.icon" />
         </button>
       </div>
     </div>
@@ -51,6 +45,7 @@
 
 <script setup lang="ts">
 import type { Entry } from '@/stores/database'
+import { entryType, describeField, copyIcon } from '@/types/entryTypes'
 
 defineProps<{
   entries: Entry[]
@@ -62,8 +57,16 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'open', entry: Entry): void
-  (e: 'copy', entry: Entry, field: 'login' | 'password'): void
+  (e: 'copy', entry: Entry, field: string): void
 }>()
+
+/** Copy buttons on a card: the type's quick-copy fields that have a value (at most 2) */
+function quickCopy(entry: Entry) {
+  return entryType(entry).quickCopy
+    .filter((key) => entry[key])
+    .slice(0, 2)
+    .map((key) => ({ key, label: describeField(entry, key).label, icon: copyIcon(key) }))
+}
 </script>
 
 <style scoped>
@@ -101,6 +104,12 @@ const emit = defineEmits<{
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+}
+
+.entry-card-type {
+  flex-shrink: 0;
+  font-size: 16px;
+  color: var(--c-text-muted);
 }
 
 .entry-card-name {

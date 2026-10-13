@@ -1,4 +1,5 @@
 import { HISTORY_LIMIT, type Database, type Entry, type HistoryVersion, type TrashItem } from '@/stores/database'
+import type { CustomField } from '@/types/entryTypes'
 
 export interface MergeStats {
   // Entries taken from the other side (new there, or restored there)
@@ -39,7 +40,7 @@ function fieldNames(...entries: (Entry | undefined)[]): string[] {
   const names = new Set<string>()
   for (const entry of entries) {
     for (const key of Object.keys(entry ?? {})) {
-      if (key !== 'id' && key !== 'history') names.add(key)
+      if (key !== 'id' && key !== 'history' && key !== 'custom') names.add(key)
     }
   }
   return [...names]
@@ -68,6 +69,28 @@ function mergeHistory(a: HistoryVersion[] = [], b: HistoryVersion[] = []): Histo
     result.push(version)
   }
   return result.sort((x, y) => x.at - y.at)
+}
+
+/**
+ * Custom field definitions: a field removed on either side is removed, new ones from
+ * both sides are kept; a renamed field takes the side that changed it
+ */
+function mergeCustom(base: CustomField[] = [], ours: CustomField[] = [], theirs: CustomField[] = []): CustomField[] {
+  const baseById = new Map(base.map((field) => [field.id, field]))
+  const theirById = new Map(theirs.map((field) => [field.id, field]))
+  const ourIds = new Set(ours.map((field) => field.id))
+  const result: CustomField[] = []
+  for (const field of ours) {
+    const original = baseById.get(field.id)
+    const other = theirById.get(field.id)
+    if (original && !other) continue
+    const changedHere = !original || JSON.stringify(field) !== JSON.stringify(original)
+    result.push(changedHere || !other ? field : other)
+  }
+  for (const field of theirs) {
+    if (!ourIds.has(field.id) && !baseById.has(field.id)) result.push(field)
+  }
+  return result
 }
 
 function withHistory(entry: Entry, history: HistoryVersion[]): Entry {
@@ -209,5 +232,7 @@ function mergeEntry(mine: Located, other: Located, original: Located | undefined
     }
   }
 
+  const custom = mergeCustom(original?.entry.custom, mine.entry.custom, other.entry.custom)
+  if (custom.length) entry.custom = custom
   return { entry: withHistory(entry, history), place, deletedAt }
 }

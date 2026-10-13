@@ -42,11 +42,12 @@ Screenshots use fictional demo data and are regenerated with `npm run screenshot
 - **Auto-lock** — automatic session lock after 5 minutes of inactivity
 - **Password generator** — configurable length, character sets, strength indicator
 - **Password masking** — passwords hidden in table, reveal on demand with auto-hide
-- **Clipboard copy** — one-click copy for logins and passwords
+- **Clipboard copy** — one-click copy for logins, passwords and any other field
+- **Entry types** — logins, API keys, payment cards, secure notes, identities and addresses, each with its own fields; custom fields on any entry
 - **Entry history** — previous values of every field (last 20 changes per entry), restore a whole version or a single field
 - **Trash** — deleted entries can be restored for 30 days
 - **Import/Export** — backup and restore your database as JSON
-- **Keyboard shortcuts** — `Ctrl+S` save, `Ctrl+N` new entry
+- **Keyboard shortcuts** — `Ctrl+S` save, `Ctrl+N` new login
 - **Responsive design** — works on desktop, tablet, and mobile
 - **URL sharing** — share repository config via URL parameters
 
@@ -58,7 +59,7 @@ Screenshots use fictional demo data and are regenerated with `npm run screenshot
 - **Vite 6** — fast builds with HMR
 - **UnoCSS** — atomic CSS with custom design tokens
 - **Lucide Icons** — clean, consistent icon set
-- **Vitest** — 195 unit tests (crypto, stores, merge, backups, FileSystemDriver, Google Drive client, password strength)
+- **Vitest** — 220 unit tests (crypto, stores, merge, backups, FileSystemDriver, Google Drive client, password strength)
 - **Web Crypto API** — native browser encryption (AES-256-GCM + PBKDF2)
 - **crypto-js** — only for reading legacy (v1/v2) database files
 
@@ -112,13 +113,32 @@ If the repository has no database yet, the app asks before creating one: type th
 
 Click **Connect** to unlock the database. Then:
 
-- **Add** — create new password entries
+- **Add** — choose the type of the new entry (see [Entry types](#entry-types))
 - **Edit** — double-click a row or select + Edit
 - **Delete** — select rows + Delete; entries go to the trash (the toast has an **Undo** button)
 - **Select several** — Ctrl/⌘+click toggles a row, Shift+click selects a range
 - **Save** — persist changes to the repository
 - **Filter** — type in any column header to filter entries
-- **Copy** — click the copy icon on login/password cells (the clipboard is cleared after 30 s)
+- **Copy** — click the copy icon in the Details and Secret cells or next to any field in the form (the clipboard is cleared after 30 s)
+
+### Entry types
+
+Every entry has a type that decides its fields. The table shows all types in the same columns: **Name** (with the type icon), **Details** (a summary: the login, `Visa •••• 4242 · 12/27`, `production · until 01/31/2027`, a city…), **Secret** (the main secret, masked, with show and copy buttons), **URL** and **Notes**.
+
+| Type | Fields (🔒 masked) | Secret column |
+|------|--------------------|---------------|
+| Login | Login, Password 🔒, URL, Notes | Password |
+| API Key | Key 🔒, Secret 🔒, Environment, Scopes, Expires, Console URL, Notes | Key |
+| Card | Cardholder, Number 🔒, Expiry, CVV 🔒, PIN 🔒, Bank, Bank phone, Notes | Number |
+| Secure Note | Note 🔒 (multi-line) | Note |
+| Identity | Full name, Date of birth, Phone, Email, Company, Job title, Notes | — |
+| Address | Country, Region, City, Street, Building / apartment, Postal code, Notes | — |
+
+- Card numbers are grouped as you type, the card brand is detected and a typo in the number (Luhn checksum) is pointed out; the expiry date is formatted as MM/YY
+- **Custom fields** — **Add field** in the form adds a field to one entry: give it a name and a kind (text, secret, multi-line text, URL, email, phone, date); fields can be reordered and removed
+- **Changing the type** of an entry keeps the fields both types have; the others become custom fields, so nothing is lost
+- **Types** below the category tree (and in the category picker on a phone) filter the list by type, together with the selected category; with a type selected, **Add** creates an entry of that type
+- Search, history, the trash and merging changes from other devices work with all fields, custom ones included
 
 ### Categories
 
@@ -192,12 +212,16 @@ The app must be served over **HTTPS** (or `localhost`): the Web Crypto API is no
 
 | Version | Cipher | Key derivation | Status |
 |---------|--------|----------------|--------|
-| v3 | AES-256-GCM (Web Crypto) | PBKDF2-SHA256, 600k iterations (stored in file) | Current — written on every save |
+| v4 | Same as v3 | Same as v3 | Current — written on every save; marks databases with entry types |
+| v3 | AES-256-GCM (Web Crypto) | PBKDF2-SHA256, 600k iterations (stored in file) | Read-only |
 | v2 | AES-256-CBC, no MAC (crypto-js) | PBKDF2-SHA256 or SHA1, 100k iterations | Read-only |
 | v1 | 3DES (crypto-js) | Password used as passphrase | Read-only |
 
-> **Upgrading:** once a database is saved in v3, versions of the app released before v3 support cannot open it
-> (they report "Incorrect password"). Reload the app on every device so the service worker picks up the new version.
+> **Upgrading:** once a database is saved in v4 (v3), versions of the app released before entry types (before v3 support)
+> cannot open it — they report "Incorrect password", which also keeps them from overwriting it. Reload the app on every
+> device so the service worker picks up the new version. **A tab that was already open with an old version can still
+> save over the database and drop types and custom fields — reload it before saving.** A file from a newer version than
+> the app is refused with "saved by a newer version of the app".
 
 ## Google Drive Setup
 

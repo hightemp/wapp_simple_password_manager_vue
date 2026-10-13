@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <Transition name="modal">
+    <Transition name="modal" :leave-active-class="instantClose ? 'modal-leave-instant' : undefined" @after-leave="emit('closed')">
       <div
         v-if="modelValue"
         class="modal-overlay"
@@ -46,15 +46,20 @@ const props = withDefaults(defineProps<{
   size?: 'sm' | 'md' | 'lg'
   closable?: boolean
   persistent?: boolean
+  // Disappear without the closing animation (e.g. when another modal replaces it)
+  instantClose?: boolean
 }>(), {
   title: '',
   size: 'md',
   closable: true,
   persistent: false,
+  instantClose: false,
 })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
+  // The modal is gone from the page (after the closing animation)
+  (e: 'closed'): void
 }>()
 
 const overlayRef = ref<HTMLElement | null>(null)
@@ -210,6 +215,13 @@ onUnmounted(() => {
   padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--c-border);
   flex-shrink: 0;
+}
+
+.modal-leave-instant {
+  transition: none !important;
+}
+.modal-leave-instant .modal-panel {
+  transition: none !important;
 }
 
 /* Transition */

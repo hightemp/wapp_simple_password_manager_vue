@@ -54,6 +54,8 @@ const width = ref(initial.width)
 const collapsed = ref(initial.collapsed)
 // The trash is shown instead of a category (not remembered across reloads)
 const trashSelected = ref(false)
+// Only entries of this type are listed (null = all types; not remembered either)
+const typeFilter = ref<string | null>(null)
 
 watch([selected, extra, expanded, width, collapsed], () => {
   try {
@@ -98,6 +100,11 @@ export function useCategoryState() {
 
   function selectTrash() {
     trashSelected.value = true
+  }
+
+  /** Show only entries of a type; selecting the current one again shows all types */
+  function toggleType(type: string | null) {
+    typeFilter.value = typeFilter.value === type ? null : type
   }
 
   /** Ctrl/⌘+click: add or remove a category; "All" cannot be combined with others */
@@ -170,8 +177,8 @@ export function useCategoryState() {
   }
 
   return {
-    selected, extra, selectedSet, expanded, width, collapsed, trashSelected,
-    selectOnly, selectTrash, toggleSelection, selectRange,
+    selected, extra, selectedSet, expanded, width, collapsed, trashSelected, typeFilter,
+    selectOnly, selectTrash, toggleType, toggleSelection, selectRange,
     toggleExpanded, reveal, followRename, followDelete, effectiveSelection, effectiveSelections,
   }
 }

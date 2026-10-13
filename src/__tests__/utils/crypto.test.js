@@ -7,6 +7,7 @@ import {
   encryptV2,
   encryptV3,
   DecryptionError,
+  UnsupportedVersionError,
   generatePassword,
 } from '../../utils/crypto'
 
@@ -47,15 +48,26 @@ describe('Crypto module', { timeout: 30000 }, () => {
       expect(JSON.parse(await decrypt(encrypted, password))).toEqual(testData)
     })
 
-    it('should produce v3 envelope format', async () => {
+    it('should produce the v4 envelope (v3 cipher)', async () => {
       const parsed = JSON.parse(await encrypt('hello', password))
 
-      expect(parsed.v).toBe(3)
+      expect(parsed.v).toBe(4)
       expect(parsed.kdf).toBe('PBKDF2-SHA256')
       expect(parsed.iterations).toBe(600000)
       expect(atob(parsed.salt).length).toBe(16)
       expect(atob(parsed.iv).length).toBe(12)
       expect(parsed.data).toBeTruthy()
+    })
+
+    it('should still read v3 envelopes', async () => {
+      const v3 = await encryptV3('old', password, 1000)
+      expect(JSON.parse(v3).v).toBe(3)
+      expect(await decrypt(v3, password)).toBe('old')
+    })
+
+    it('should refuse files from a newer app version', async () => {
+      const newer = JSON.stringify({ ...JSON.parse(await encrypt('x', password)), v: 5 })
+      await expect(decrypt(newer, password)).rejects.toBeInstanceOf(UnsupportedVersionError)
     })
 
     it('should produce different ciphertexts for same input (random salt/iv)', async () => {
@@ -125,7 +137,7 @@ describe('Crypto module', { timeout: 30000 }, () => {
       const decrypted = await decrypt(v1Encrypted, password)
 
       const v3Encrypted = await encrypt(decrypted, password)
-      expect(JSON.parse(v3Encrypted).v).toBe(3)
+      expect(JSON.parse(v3Encrypted).v).toBe(4)
       expect(JSON.parse(await decrypt(v3Encrypted, password))).toEqual(testData)
     })
   })

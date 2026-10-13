@@ -1,8 +1,8 @@
 <template>
-<BaseModal v-model="isOpen" :title="title" size="md">
+<BaseModal v-model="isOpen" :title="db.editWindow.item.id ? `Edit ${typeLabel}` : `New ${typeLabel}`" size="md">
   <EntryFormFields />
 
-  <PasswordGenerator ref="generator" @use="(password) => db.setFormField('password', password)" />
+  <PasswordGenerator v-if="entryType({ type: db.formType }).generator" ref="generator" @use="(password) => db.setFormField('password', password)" />
 
   <template #footer>
     <div class="modal-footer-row">
@@ -34,18 +34,19 @@
 import { computed, ref, useTemplateRef } from 'vue'
 import { useDatabaseStore } from '@/stores/database'
 import { useNotify } from '@/composables/useNotify'
+import { entryType } from '@/types/entryTypes'
 import BaseModal from './BaseModal.vue'
 import EntryFormFields from './EntryFormFields.vue'
 import EntryHistoryModal from './EntryHistoryModal.vue'
 import PasswordGenerator from './PasswordGenerator.vue'
 
-defineProps<{ title: string }>()
 
 const db = useDatabaseStore()
 const notify = useNotify()
 const generator = useTemplateRef('generator')
 const showHistory = ref(false)
 
+const typeLabel = computed(() => entryType({ type: db.formType }).label)
 const historyCount = computed(() => db.editWindow.item.history?.length ?? 0)
 
 const isOpen = computed({

@@ -71,7 +71,8 @@
 
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
-import { COLUMNS, type Entry } from '@/stores/database'
+import type { Entry } from '@/stores/database'
+import { describeField, isSecretKind } from '@/types/entryTypes'
 import { copySecret, CLIPBOARD_CLEAR_DELAY } from '@/utils/clipboard'
 import { useNotify } from '@/composables/useNotify'
 import { useConfirm } from '@/composables/useConfirm'
@@ -103,11 +104,11 @@ const revealed = reactive(new Set<string>())
 watch(() => props.entry, () => revealed.clear())
 
 function label(field: string): string {
-  return COLUMNS[field]?.label ?? field
+  return describeField(props.entry ?? {}, field).label
 }
 
 function isSecret(field: string): boolean {
-  return COLUMNS[field]?.type === 'password'
+  return isSecretKind(describeField(props.entry ?? {}, field).kind)
 }
 
 function isRevealed(index: number, field: string): boolean {

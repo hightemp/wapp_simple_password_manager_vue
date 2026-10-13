@@ -14,6 +14,7 @@
       @select-trash="pickTrash"
       @toggle="toggleExpanded"
     />
+    <TypeFilterList v-if="showTrash" class="picker-types" @picked="isOpen = false" />
   </BaseModal>
 </template>
 
@@ -22,6 +23,7 @@ import { useDatabaseStore } from '@/stores/database'
 import { useCategoryState, type CategorySelection } from '@/composables/useCategoryState'
 import BaseModal from './BaseModal.vue'
 import CategoryTree from './CategoryTree.vue'
+import TypeFilterList from './TypeFilterList.vue'
 
 withDefaults(defineProps<{
   title: string
@@ -63,6 +65,11 @@ function pickTrash() {
   width: 36px;
   height: 36px;
   font-size: 18px;
+}
+.picker-types :deep(.type-row) {
+  min-height: 44px;
+  font-size: var(--text-lg);
+  padding-left: calc(var(--space-2) + 36px);
 }
 .picker-tree :deep(.cat-chevron-space) {
   width: 36px;
