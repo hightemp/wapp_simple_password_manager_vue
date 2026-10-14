@@ -12,6 +12,20 @@ export interface MergeStats {
   conflicts: number
 }
 
+/** What a merge took from the other device, for the "Saved" notification */
+export function describeMerge(stats: MergeStats): string {
+  const parts = [
+    stats.added && `${stats.added} added`,
+    stats.updated && `${stats.updated} updated`,
+    stats.removed && `${stats.removed} removed`,
+  ].filter(Boolean)
+  let text = parts.length ? `Entries from there: ${parts.join(', ')}.` : 'No entries changed there.'
+  if (stats.conflicts) {
+    text += ` ${stats.conflicts} field${stats.conflicts === 1 ? ' was' : 's were'} changed on both sides — your values are kept, theirs are in the entry history.`
+  }
+  return text
+}
+
 export interface MergeResult {
   database: Database
   stats: MergeStats

@@ -59,7 +59,8 @@ export interface Database {
 // Versions kept per entry
 export const HISTORY_LIMIT = 20
 // Entries in the trash are deleted for good after this time
-export const TRASH_RETENTION = 30 * 24 * 60 * 60 * 1000
+export const TRASH_DAYS = 30
+export const TRASH_RETENTION = TRASH_DAYS * 24 * 60 * 60 * 1000
 // Properties of an entry that are not field values
 const NON_FIELD_KEYS = new Set(['id', 'type', 'custom', 'history'])
 // Field changes not recorded in the history (moving to another category)

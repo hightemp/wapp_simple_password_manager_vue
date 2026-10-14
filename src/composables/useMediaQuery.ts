@@ -1,13 +1,13 @@
-import { ref, onMounted, onUnmounted, type Ref } from 'vue'
+import { ref, onScopeDispose, getCurrentScope, type Ref } from 'vue'
 
-/** Reactive `window.matchMedia(query).matches` */
+/** Reactive `window.matchMedia(query).matches`; works in components and effect scopes */
 export function useMediaQuery(query: string): Ref<boolean> {
   const mediaQuery = window.matchMedia(query)
   const matches = ref(mediaQuery.matches)
   const update = (event: MediaQueryListEvent) => { matches.value = event.matches }
 
-  onMounted(() => mediaQuery.addEventListener('change', update))
-  onUnmounted(() => mediaQuery.removeEventListener('change', update))
+  mediaQuery.addEventListener('change', update)
+  if (getCurrentScope()) onScopeDispose(() => mediaQuery.removeEventListener('change', update))
 
   return matches
 }
