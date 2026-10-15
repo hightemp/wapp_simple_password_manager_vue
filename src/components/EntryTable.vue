@@ -1,21 +1,37 @@
 <template>
   <div class="entry-table">
-    <!-- Pagination bar -->
-    <div class="pagination-bar" v-if="pageCount > 1">
-      <button class="pg-btn" @click="goToFirstPage" :disabled="page <= 1" aria-label="First page">
-        <div class="i-lucide-chevrons-left" />
-      </button>
-      <button class="pg-btn" @click="goToPrevPage" :disabled="page <= 1" aria-label="Previous page">
-        <div class="i-lucide-chevron-left" />
-      </button>
-      <span class="pg-info">{{ page }} / {{ pageCount }}</span>
-      <button class="pg-btn" @click="goToNextPage" :disabled="page >= pageCount" aria-label="Next page">
-        <div class="i-lucide-chevron-right" />
-      </button>
-      <button class="pg-btn" @click="goToLastPage" :disabled="page >= pageCount" aria-label="Last page">
-        <div class="i-lucide-chevrons-right" />
-      </button>
-      <span class="pg-count">{{ filteredRows.length }} entries</span>
+    <div class="table-toolbar">
+      <!-- Search over every field (secrets excluded) -->
+      <div class="table-search">
+        <div class="i-lucide-search table-search-icon" />
+        <input
+          v-model="searchQuery"
+          type="search"
+          class="table-search-input"
+          placeholder="Search"
+          aria-label="Search entries"
+          autocomplete="off"
+          @keydown.esc.stop="searchQuery = ''"
+        />
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination-bar" v-if="pageCount > 1">
+        <button class="pg-btn" @click="goToFirstPage" :disabled="page <= 1" aria-label="First page">
+          <div class="i-lucide-chevrons-left" />
+        </button>
+        <button class="pg-btn" @click="goToPrevPage" :disabled="page <= 1" aria-label="Previous page">
+          <div class="i-lucide-chevron-left" />
+        </button>
+        <span class="pg-info">{{ page }} / {{ pageCount }}</span>
+        <button class="pg-btn" @click="goToNextPage" :disabled="page >= pageCount" aria-label="Next page">
+          <div class="i-lucide-chevron-right" />
+        </button>
+        <button class="pg-btn" @click="goToLastPage" :disabled="page >= pageCount" aria-label="Last page">
+          <div class="i-lucide-chevrons-right" />
+        </button>
+      </div>
+      <span class="pg-count">{{ filteredRows.length }} {{ filteredRows.length === 1 ? 'entry' : 'entries' }}</span>
     </div>
 
     <!-- Data table -->
@@ -28,10 +44,11 @@
             :key="column.key"
             class="grid-cell grid-cell-header"
             role="columnheader"
-            @click="toggleSort(column.key)"
-            :aria-sort="sortKey === column.key ? (sortAsc ? 'ascending' : 'descending') : 'none'"
+            :aria-sort="column.sortable === false ? undefined : sortKey === column.key ? (sortAsc ? 'ascending' : 'descending') : 'none'"
+            :title="column.sortable === false ? undefined : 'Sort (click again to reverse, a third time to reset)'"
+            @click="column.sortable !== false && toggleSort(column.key)"
           >
-            <div class="header-label-row">
+            <div :class="['header-label-row', { 'header-label-row--sortable': column.sortable !== false }]">
               <span class="header-label">{{ column.label }}</span>
               <div v-if="sortKey === column.key" :class="sortAsc ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'" class="sort-icon" />
             </div>
@@ -41,8 +58,8 @@
                 type="text"
                 class="filter-input"
                 placeholder="Filter..."
-                :value="db.table.filter[column.key]"
-                @input="(event) => onFilterInput(event, column.key)"
+                :value="filterDrafts[column.key] ?? db.table.filter[column.key]"
+                @input="(event) => onFilterInput(column.key, (event.target as HTMLInputElement).value)"
                 @click.stop
                 autocomplete="off"
               />
@@ -53,7 +70,15 @@
 
         <!-- Empty state -->
         <div v-if="pageRows.length === 0" class="empty-state">
-          <template v-if="isTrashView">
+          <template v-if="isFiltered">
+            <div class="i-lucide-search-x empty-icon" />
+            <p class="empty-title">Nothing found</p>
+            <p class="empty-sub">No entries match the search or the column filters</p>
+            <button class="action-btn action-btn--ghost action-btn--sm empty-action" @click="clearAll">
+              Clear search and filters
+            </button>
+          </template>
+          <template v-else-if="isTrashView">
             <div class="i-lucide-trash-2 empty-icon" />
             <p class="empty-title">Trash is empty</p>
             <p class="empty-sub">Deleted entries stay here for {{ TRASH_DAYS }} days</p>
@@ -162,7 +187,7 @@ const emit = defineEmits<{
 }>()
 
 const db = useDatabaseStore()
-const { filteredRows, isTrashView, sortKey, sortAsc, toggleSort } = useEntryList()
+const { filteredRows, isTrashView, isFiltered, searchQuery, sortKey, sortAsc, toggleSort, clearSearchAndFilters } = useEntryList()
 const { selectedEntry, selectedIds, selectSingle, selectRow, collapseSelection } = useEntrySelection()
 
 const tableScroll = useTemplateRef<HTMLElement>('tableScroll')
@@ -212,6 +237,9 @@ const page = computed({
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / rowsPerPage.value)))
 
+// A new search starts on the first page
+watch(searchQuery, () => { page.value = 1 })
+
 // Keep the current page in range when rows are filtered out or the window grows
 watch(pageCount, (count) => {
   if (page.value > count) page.value = count
@@ -226,11 +254,28 @@ function goToPrevPage() { if (page.value > 1) page.value -= 1 }
 function goToLastPage() { page.value = pageCount.value }
 function goToNextPage() { if (page.value < pageCount.value) page.value += 1 }
 
-const onFilterInput = debounce((event: Event, key: string) => {
-  db.setFilter(key, (event.target as HTMLInputElement).value)
+// Typed filter text not applied yet: the inputs show it, so a re-render while waiting
+// doesn't put the old value back
+const filterDrafts = reactive<Record<string, string>>({})
+
+const applyFilters = debounce(() => {
+  for (const [key, value] of Object.entries(filterDrafts)) {
+    db.setFilter(key, value)
+    delete filterDrafts[key]
+  }
   // Reset to page 1 when filter changes so rows aren't out of range
   page.value = 1
 }, 300)
+
+function clearAll() {
+  for (const key of Object.keys(filterDrafts)) delete filterDrafts[key]
+  clearSearchAndFilters()
+}
+
+function onFilterInput(key: string, value: string) {
+  filterDrafts[key] = value
+  applyFilters()
+}
 
 // --- rows ---
 function onRowClick(row: Entry, event: MouseEvent) {
@@ -337,15 +382,57 @@ onUnmounted(() => {
   min-height: 0;
 }
 /* ===== Pagination ===== */
-.pagination-bar {
+.table-toolbar {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--c-border);
   background: var(--c-bg-elevated);
   flex-shrink: 0;
+}
+
+.table-search {
+  position: relative;
+  flex: 0 1 320px;
+  min-width: 160px;
+  display: flex;
+  align-items: center;
+}
+
+.table-search-icon {
+  position: absolute;
+  left: 9px;
+  font-size: 14px;
+  color: var(--c-text-muted);
+  pointer-events: none;
+}
+
+.table-search-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-2) 0 30px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--text-sm);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+.table-search-input:focus {
+  border-color: var(--c-accent);
+}
+.table-search-input::placeholder {
+  color: var(--c-text-muted);
+}
+
+.pagination-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
 }
 
 .pg-btn {
@@ -380,9 +467,10 @@ onUnmounted(() => {
 }
 
 .pg-count {
+  margin-left: auto;
   font-size: var(--text-xs);
   color: var(--c-text-muted);
-  margin-left: var(--space-2);
+  white-space: nowrap;
 }
 /* ===== Table ===== */
 .table-scroll {
@@ -463,10 +551,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  cursor: pointer;
   user-select: none;
 }
-.header-label-row:hover .header-label {
+.header-label-row--sortable {
+  cursor: pointer;
+}
+.header-label-row--sortable:hover .header-label {
   color: var(--c-text);
 }
 
@@ -636,6 +726,10 @@ onUnmounted(() => {
 .empty-sub {
   font-size: var(--text-sm);
   color: var(--c-text-muted);
+}
+
+.empty-action {
+  margin-top: var(--space-3);
 }
 /* ===== Row Transitions ===== */
 .row-enter-active,

@@ -946,6 +946,79 @@ test.describe('Website icons', () => {
   })
 })
 
+test.describe('Search and sorting', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+  })
+
+  async function addFull(page: Page, name: string, login: string, password: string, notes = '') {
+    await page.locator('.sidebar-btn[aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
+    const form = page.locator('.modal-panel')
+    await form.locator('[data-field="name"] input').fill(name)
+    await form.locator('[data-field="login"] input').fill(login)
+    await form.locator('[data-field="password"] input').fill(password)
+    if (notes) await form.locator('[data-field="description"] textarea').fill(notes)
+    await form.locator('button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+  }
+
+  const names = (page: Page) => page.locator('.grid-row:not(.grid-header) .cell-name .cell-text').allTextContents()
+
+  test('should search all fields except secrets, case-insensitively', async ({ page }) => {
+    await addFull(page, 'Mail', 'me@example.com', 'hunter2-secret', 'Personal inbox')
+    await addFull(page, 'GitHub', 'octo', 'pw-github')
+    await addFull(page, 'Bank', 'acc', 'pw-bank')
+
+    await page.keyboard.press('Control+f')
+    await expect(page.locator('.table-search-input')).toBeFocused()
+    await page.keyboard.type('PERSONAL')
+    await expect.poll(() => names(page)).toEqual(['Mail'])
+
+    // Passwords are not searched
+    await page.locator('.table-search-input').fill('hunter2')
+    await expect(page.locator('.empty-title')).toHaveText('Nothing found')
+    await page.locator('button:has-text("Clear search and filters")').click()
+    await expect.poll(() => names(page)).toEqual(['Mail', 'GitHub', 'Bank'])
+
+    // Column filters ignore case too
+    await page.locator('.filter-input').first().fill('github')
+    await expect.poll(() => names(page)).toEqual(['GitHub'])
+    await page.locator('.filter-input').first().fill('')
+
+    // Esc in the search field clears it
+    await page.locator('.table-search-input').fill('bank')
+    await expect.poll(() => names(page)).toEqual(['Bank'])
+    await page.locator('.table-search-input').press('Escape')
+    await expect(page.locator('.table-search-input')).toHaveValue('')
+  })
+
+  test('should sort by a column, reverse, reset and remember it', async ({ page }) => {
+    await addFull(page, 'Mail', 'm', 'p1')
+    await addFull(page, 'bank', 'b', 'p2')
+    await addFull(page, 'GitHub', 'g', 'p3')
+    const nameHeader = page.locator('.grid-cell-header:has-text("Name")')
+    const nameLabel = nameHeader.locator('.header-label-row')
+
+    await nameLabel.click()
+    await expect(nameHeader).toHaveAttribute('aria-sort', 'ascending')
+    await expect.poll(() => names(page)).toEqual(['bank', 'GitHub', 'Mail'])
+    await nameLabel.click()
+    await expect.poll(() => names(page)).toEqual(['Mail', 'GitHub', 'bank'])
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('entrySort') ?? 'null'))).toEqual({ key: 'name', ascending: false })
+    await nameLabel.click()
+    await expect(nameHeader).toHaveAttribute('aria-sort', 'none')
+    await expect.poll(() => names(page)).toEqual(['Mail', 'bank', 'GitHub'])
+
+    // The secret column is not sortable
+    const secretHeader = page.locator('.grid-cell-header:has-text("Secret")')
+    await secretHeader.locator('.header-label-row').click()
+    await expect(secretHeader).not.toHaveAttribute('aria-sort', /.+/)
+    await expect.poll(() => names(page)).toEqual(['Mail', 'bank', 'GitHub'])
+  })
+})
+
 test.describe('Mobile', { tag: '@mobile' }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
@@ -1197,6 +1270,32 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
     const sheet = page.locator('.modal-panel:has-text("Move to category")')
     await expect(sheet.locator('.cat-tree')).toBeVisible()
     await expect(sheet.locator('.cat-menu-btn, .new-category-btn')).toHaveCount(0)
+  })
+
+  test('should sort the card list and not find entries by password', async ({ page }) => {
+    await addEntry(page, { name: 'Mail', password: 'hunter2' })
+    await addEntry(page, { name: 'bank', password: 'x1' })
+    await addEntry(page, { name: 'GitHub', password: 'x2' })
+    const cardNames = () => page.locator('.entry-card-name').allTextContents()
+
+    await page.locator('.mobile-sort-btn').click()
+    await page.locator('.sort-option:has-text("Name A → Z")').click()
+    await expect.poll(cardNames).toEqual(['bank', 'GitHub', 'Mail'])
+    await expect(page.locator('.mobile-sort-btn')).toHaveClass(/mobile-sort-btn--active/)
+    await expectTouchTarget(page.locator('.mobile-sort-btn'))
+
+    await page.locator('.mobile-sort-btn').click()
+    await expect(page.locator('.sort-option:has-text("Name A → Z")')).toHaveAttribute('aria-checked', 'true')
+    await page.locator('.sort-option:has-text("Recently added")').click()
+    await expect.poll(cardNames).toEqual(['GitHub', 'bank', 'Mail'])
+
+    await page.locator('.mobile-sort-btn').click()
+    await page.locator('.sort-option:has-text("Default order")').click()
+    await expect.poll(cardNames).toEqual(['Mail', 'bank', 'GitHub'])
+
+    await page.locator('.mobile-search-input').fill('hunter2')
+    await expect(page.locator('.entry-card')).toHaveCount(0)
+    await expectNoHorizontalScroll(page)
   })
 
   test('should move an entry to another category from its details', async ({ page }) => {

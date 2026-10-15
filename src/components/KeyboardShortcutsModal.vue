@@ -17,7 +17,7 @@ const isOpen = defineModel<boolean>({ required: true })
 const SHORTCUTS = [
   { key: 'Ctrl + S', description: 'Save all changes' },
   { key: 'Ctrl + N', description: 'New login (Add asks for the type)' },
-  { key: 'Ctrl + F', description: 'Focus first filter' },
+  { key: 'Ctrl + F', description: 'Search' },
   { key: '↑ / ↓', description: 'Select previous / next entry' },
   { key: '← / →', description: 'Previous / next page' },
   { key: 'Home / End', description: 'First / last page' },

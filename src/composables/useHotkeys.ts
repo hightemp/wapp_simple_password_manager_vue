@@ -30,7 +30,7 @@ export function useHotkeys(handlers: HotkeyHandlers) {
     }
     if (event.ctrlKey && event.key === 'f') {
       event.preventDefault()
-      document.querySelector<HTMLInputElement>('.filter-input')?.focus()
+      document.querySelector<HTMLInputElement>('.table-search-input, .mobile-search-input')?.focus()
     }
     // Table shortcuts below must not fire behind an open modal
     if (isModalOpen()) return

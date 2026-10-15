@@ -23,6 +23,7 @@ const ENTRIES = [
 
 function setup({ isMobile = false } = {}) {
   mobile = isMobile
+  localStorage.removeItem('entrySort')
   setActivePinia(createPinia())
   resetSharedComposables()
   const categories = useCategoryState()
@@ -44,10 +45,16 @@ describe('useEntryList helpers', () => {
     expect(cellValue(ENTRIES[2], 'missing')).toBe('')
   })
 
-  it('matchesSearch looks at every string field except the type', () => {
+  it('matchesSearch looks at every string field except the type and secrets', () => {
     expect(matchesSearch(ENTRIES[1], 'visa')).toBe(true)
     expect(matchesSearch({ type: 'wifi', name: 'Home' }, 'wifi')).toBe(false)
     expect(matchesSearch(ENTRIES[0], 'gmail.com')).toBe(true)
+    // Passwords, card numbers and secret custom fields are not searched
+    expect(matchesSearch(ENTRIES[0], 'p1')).toBe(false)
+    expect(matchesSearch(ENTRIES[1], '4111')).toBe(false)
+    const custom = { name: 'X', custom: [{ id: 'a', label: 'Word', kind: 'secret' }, { id: 'b', label: 'Note', kind: 'text' }], 'custom:a': 'hidden', 'custom:b': 'shown' }
+    expect(matchesSearch(custom, 'hidden')).toBe(false)
+    expect(matchesSearch(custom, 'shown')).toBe(true)
   })
 
   it('inCategories handles all, uncategorized and subcategories', () => {
@@ -63,6 +70,9 @@ describe('useEntryList helpers', () => {
     expect(names(sortEntries(input, 'name', true))).toEqual(['Alpha', 'bank', 'Gmail', 'Work VPN'])
     expect(names(sortEntries(input, 'name', false))).toEqual(['Work VPN', 'Gmail', 'bank', 'Alpha'])
     expect(names(input)).toEqual(names(ENTRIES))
+    expect(names(sortEntries(input, 'added', false))).toEqual(['Work VPN', 'Alpha', 'bank', 'Gmail'])
+    // Numbers in natural order
+    expect(names(sortEntries([{ name: 'Entry 10' }, { name: 'entry 2' }, { name: 'Entry 1' }], 'name', true))).toEqual(['Entry 1', 'entry 2', 'Entry 10'])
   })
 })
 
@@ -82,14 +92,16 @@ describe('useEntryList', () => {
     expect(names(list.filteredRows.value)).toEqual(['Gmail', 'Alpha', 'Work VPN'])
   })
 
-  it('applies column filters on desktop and ignores the search field', () => {
+  it('applies the search and case-insensitive column filters on desktop', () => {
     const { db, list } = setup()
-    // Column filters are case-sensitive
-    db.setFilter('name', 'a')
-    list.searchQuery.value = 'zzz'
+    db.setFilter('name', 'A')
     expect(names(list.filteredRows.value)).toEqual(['Gmail', 'bank', 'Alpha'])
-    db.setFilter('description', 'o')
-    expect(names(list.filteredRows.value)).toEqual(['Alpha'])
+    expect(list.isFiltered.value).toBe(true)
+    list.searchQuery.value = 'MAIL'
+    expect(names(list.filteredRows.value)).toEqual(['Gmail'])
+    list.clearSearchAndFilters()
+    expect(list.filteredRows.value).toHaveLength(4)
+    expect(list.isFiltered.value).toBe(false)
   })
 
   it('applies the search field on mobile and ignores column filters', () => {
@@ -99,13 +111,29 @@ describe('useEntryList', () => {
     expect(names(list.filteredRows.value)).toEqual(['Alpha'])
   })
 
-  it('toggles sorting by a column', () => {
+  it('toggles sorting by a column: ascending, descending, off', () => {
     const { list } = setup()
     list.toggleSort('name')
     expect(names(list.filteredRows.value)).toEqual(['Alpha', 'bank', 'Gmail', 'Work VPN'])
     list.toggleSort('name')
     expect(list.sortAsc.value).toBe(false)
     expect(names(list.filteredRows.value)[0]).toBe('Work VPN')
+    list.toggleSort('name')
+    expect(list.sortKey.value).toBeNull()
+    expect(names(list.filteredRows.value)).toEqual(names(ENTRIES))
+  })
+
+  it('remembers the sorting in this browser', async () => {
+    const { list } = setup()
+    list.setSort({ key: 'added', ascending: false })
+    await nextTick()
+    expect(JSON.parse(localStorage.getItem('entrySort'))).toEqual({ key: 'added', ascending: false })
+    // A new list (next visit) starts with it; unknown or unsortable keys are ignored
+    resetSharedComposables()
+    expect(useEntryList().sortKey.value).toBe('added')
+    localStorage.setItem('entrySort', JSON.stringify({ key: 'secret', ascending: true }))
+    resetSharedComposables()
+    expect(useEntryList().sort.value).toBeNull()
   })
 
   it('lists the trash instead of a category', () => {
