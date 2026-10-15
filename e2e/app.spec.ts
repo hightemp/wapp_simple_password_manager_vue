@@ -1133,6 +1133,72 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
     await expectNoHorizontalScroll(page)
   })
 
+  test('should create, rename, move and delete categories from the category sheet', async ({ page }) => {
+    await page.locator('.bottom-nav [aria-label="Add"]').click()
+    await page.locator('.type-option[data-type="login"]').click()
+    const inputs = page.locator('.modal-panel .form-field-input')
+    await inputs.nth(0).fill('Work')
+    await inputs.nth(1).fill('Gmail')
+    await page.locator('.modal-panel button:has-text("Save")').click()
+    await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+
+    await page.locator('[aria-label="Choose category"]').click()
+    const sheet = page.locator('.modal-panel:has(.cat-tree)').first()
+    const nameDialog = page.locator('.modal-panel:has(.name-form)')
+
+    // New top-level category
+    await sheet.locator('.new-category-btn').click()
+    await expect(nameDialog).toContainText('At the top level')
+    await expect(nameDialog.locator('input')).toBeFocused()
+    await nameDialog.locator('input').fill('Finance')
+    await nameDialog.locator('input').press('Enter')
+    await expect(sheet.locator('.cat-row[data-path="Finance"]')).toBeVisible()
+    await expectTouchTarget(sheet.locator('.cat-row[data-path="Finance"] .cat-menu-btn'))
+
+    // Subcategory from the "⋯" menu
+    await sheet.locator('.cat-row[data-path="Finance"] .cat-menu-btn').click()
+    await page.locator('.menu-item:has-text("New subcategory")').click()
+    await expect(nameDialog).toContainText('In Finance')
+    await nameDialog.locator('input').fill('Cards')
+    await nameDialog.locator('button:has-text("Save")').click()
+    await expect(sheet.locator('.cat-row[data-path="Finance/Cards"]')).toBeVisible()
+
+    // Rename: the entry follows
+    await sheet.locator('.cat-row[data-path="Work"] .cat-menu-btn').click()
+    await page.locator('.menu-item:has-text("Rename")').click()
+    await expect(nameDialog.locator('input')).toHaveValue('Work')
+    await nameDialog.locator('input').fill('Job')
+    await nameDialog.locator('button:has-text("Save")').click()
+    await expect(sheet.locator('.cat-row[data-path="Job"]')).toBeVisible()
+    await expect(sheet.locator('.cat-row[data-path="Work"]')).toHaveCount(0)
+
+    // Move into another category; the category itself is not offered as a target
+    await sheet.locator('.cat-row[data-path="Job"] .cat-menu-btn').click()
+    await page.locator('.menu-item:has-text("Move to")').click()
+    const moveSheet = page.locator('.modal-panel:has(.top-level-btn)')
+    await expect(moveSheet.locator('.cat-row[data-path="Job"]')).toHaveCount(0)
+    await moveSheet.locator('.cat-row[data-path="Finance"]').click()
+    await expect(sheet.locator('.cat-row[data-path="Finance/Job"]')).toBeVisible()
+    await expectNoHorizontalScroll(page)
+
+    // Delete: the entry moves one level up
+    await sheet.locator('.cat-row[data-path="Finance/Job"] .cat-menu-btn').click()
+    await page.locator('.menu-item:has-text("Delete")').click()
+    await page.locator('.modal-panel button:has-text("Delete")').last().click()
+    await expect(sheet.locator('.cat-row[data-path="Finance/Job"]')).toHaveCount(0)
+    await sheet.locator('.cat-row[data-path="Finance"]').click()
+    await expect(page.locator('.entry-card:has-text("Gmail")')).toContainText('Finance')
+  })
+
+  test('should not offer category actions when moving an entry', async ({ page }) => {
+    await addEntry(page, { name: 'Gmail' })
+    await page.locator('.entry-card:has-text("Gmail")').click()
+    await page.locator('[aria-label="Change category"]').click()
+    const sheet = page.locator('.modal-panel:has-text("Move to category")')
+    await expect(sheet.locator('.cat-tree')).toBeVisible()
+    await expect(sheet.locator('.cat-menu-btn, .new-category-btn')).toHaveCount(0)
+  })
+
   test('should move an entry to another category from its details', async ({ page }) => {
     await page.locator('.bottom-nav [aria-label="Add"]').click()
     await page.locator('.type-option[data-type="login"]').click()

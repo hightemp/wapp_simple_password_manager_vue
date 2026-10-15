@@ -95,6 +95,7 @@
       :selected="categoryPicker?.mode === 'move' ? (categoryPicker.entry?.category ?? '') : activeCategory"
       :show-all="categoryPicker?.mode !== 'move'"
       :show-trash="categoryPicker?.mode !== 'move'"
+      :manageable="categoryPicker?.mode === 'filter'"
       @update:model-value="(open) => !open && (categoryPicker = null)"
       @pick="onCategoryPicked"
       @pick-trash="categoryPicker = null; selectTrash()"

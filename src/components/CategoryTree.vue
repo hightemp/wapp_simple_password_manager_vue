@@ -87,6 +87,14 @@
             </button>
           </span>
           <span class="cat-count">{{ item.node.count }}</span>
+          <button
+            v-if="menuButton"
+            class="cat-menu-btn"
+            :aria-label="`Actions for ${item.node.name}`"
+            @click.stop="emit('menu', item.node.path)"
+          >
+            <div class="i-lucide-ellipsis" />
+          </button>
         </template>
       </li>
 
@@ -113,6 +121,7 @@
 
     <!-- Entries without a category -->
     <li
+      v-if="showUncategorized"
       :class="rowClass('')"
       role="treeitem"
       :aria-selected="isSelected('')"
@@ -171,7 +180,12 @@ const props = withDefaults(defineProps<{
   // Show the Trash node with this many entries (hidden when undefined)
   trashCount?: number
   trashSelected?: boolean
+  // A "⋯" button on each category (touch screens: no hover actions, no dragging)
+  menuButton?: boolean
+  showUncategorized?: boolean
 }>(), {
+  menuButton: false,
+  showUncategorized: true,
   manageable: false,
   multiSelect: false,
   selectedSet: undefined,
@@ -192,6 +206,7 @@ const emit = defineEmits<{
   (e: 'move-categories', paths: string[], newParent: string): void
   (e: 'select-trash'): void
   (e: 'trash-entries', ids: number[]): void
+  (e: 'menu', path: string): void
 }>()
 
 // Drop target id of the Trash node
@@ -467,6 +482,26 @@ function onTrashDrop(event: DragEvent) {
 }
 .cat-action--danger:hover {
   color: var(--c-danger);
+}
+
+.cat-menu-btn {
+  flex-shrink: 0;
+  /* Touch target */
+  width: 44px;
+  height: 44px;
+  margin: -6px calc(-1 * var(--space-2)) -6px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--c-text-muted);
+  font-size: 18px;
+  cursor: pointer;
+}
+.cat-menu-btn:active {
+  background: var(--c-bg);
 }
 
 .cat-input {
