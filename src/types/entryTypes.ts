@@ -75,6 +75,9 @@ export interface EntryTypeDef {
   expiry?: string
 }
 
+// When the password of an entry was set (ms); stored next to the fields, but not a field itself
+export const PASSWORD_CHANGED_KEY = 'password_changed_at'
+
 export const DEFAULT_TYPE = 'login'
 
 const NOTES: FieldDef = { key: 'description', label: 'Notes', kind: 'multiline' }

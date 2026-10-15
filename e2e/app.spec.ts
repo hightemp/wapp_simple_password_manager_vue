@@ -851,6 +851,101 @@ test.describe('Categories', () => {
   })
 })
 
+// SHA-1 of "123456": prefix 7C4A8, the rest is compared locally
+const WEAK_HASH_SUFFIX = 'D09CA3762AF61E59520943DC26494F8941B'
+const PIXEL_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
+
+async function addLogin(page: Page, entry: { name: string; password?: string; url?: string }) {
+  await page.locator('.sidebar-btn[aria-label="Add"]').click()
+  await page.locator('.type-option[data-type="login"]').click()
+  const form = page.locator('.modal-panel')
+  await form.locator('[data-field="name"] input').fill(entry.name)
+  if (entry.password) await form.locator('[data-field="password"] input').fill(entry.password)
+  if (entry.url) await form.locator('[data-field="url"] input').fill(entry.url)
+  await form.locator('button:has-text("Save")').click()
+  await expect(page.locator('.modal-panel')).not.toBeVisible({ timeout: 3000 })
+}
+
+test.describe('Security report', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+  })
+
+  test('should list weak and reused passwords and check breaches by hash prefix', async ({ page }) => {
+    const requested: string[] = []
+    await page.route('https://api.pwnedpasswords.com/range/*', (route) => {
+      requested.push(route.request().url())
+      const prefix = route.request().url().split('/range/')[1]
+      return route.fulfill({ body: prefix === '7C4A8' ? `${WEAK_HASH_SUFFIX}:37359195\r\nAAAA:0` : 'BBBB:0' })
+    })
+    await addLogin(page, { name: 'Mail', password: '123456' })
+    await addLogin(page, { name: 'Shop', password: 'Vq8#mZ2!pL9$wR4x' })
+    await addLogin(page, { name: 'Forum', password: 'Vq8#mZ2!pL9$wR4x' })
+
+    await page.locator('.sidebar-btn[aria-label="Security report"]').click()
+    const report = page.locator('.modal-panel:has-text("Security report")')
+    await expect(report.locator('#report-weak')).toContainText('Mail')
+    await expect(report.locator('#report-reused')).toContainText('Same password in 2 entries')
+    await expect(report.locator('#report-reused')).toContainText('Shop')
+    await expect(report.locator('#report-reused')).toContainText('Forum')
+    // Nothing is sent before the button is pressed
+    await expect(report.locator('.report-stat:has-text("Breached") .report-stat-count')).toHaveText('—')
+    expect(requested).toEqual([])
+
+    await report.locator('button:has-text("Check for breaches")').click()
+    await expect(report.locator('#report-breached')).toContainText('Mail')
+    await expect(report.locator('#report-breached')).toContainText('Seen 37,359,195 times')
+    await expect(report.locator('.report-stat:has-text("Breached") .report-stat-count')).toHaveText('1')
+    expect(requested).toHaveLength(2)
+    for (const url of requested) expect(url).toMatch(/\/range\/[0-9A-F]{5}$/)
+
+    // An entry opens on top of the report for fixing
+    await report.locator('#report-breached .report-row:has-text("Mail")').click()
+    await expect(page.locator('.modal-panel [data-field="name"] input')).toHaveValue('Mail')
+  })
+})
+
+test.describe('Website icons', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await connectLocalStorage(page)
+  })
+
+  test('should load icons only after they are switched on, and never for local addresses', async ({ page }) => {
+    const requested: string[] = []
+    await page.route('https://icons.duckduckgo.com/**', (route) => {
+      requested.push(route.request().url())
+      return route.fulfill({ body: PIXEL_PNG, contentType: 'image/png' })
+    })
+    await addLogin(page, { name: 'Example', url: 'example.com' })
+    await addLogin(page, { name: 'Router', url: 'http://192.168.1.1' })
+
+    const row = page.locator('.grid-row:has-text("Example")')
+    // An address without a scheme opens as https
+    await expect(row.locator('a.url-link')).toHaveAttribute('href', 'https://example.com')
+    await expect(page.locator('.site-icon-img')).toHaveCount(0)
+    expect(requested).toEqual([])
+
+    await page.locator('.sidebar-btn[aria-label="Show website icons"]').click()
+    await expect(row.locator('.site-icon-img')).toBeVisible()
+    await expect(page.locator('.grid-row:has-text("Router") .site-icon-img')).toHaveCount(0)
+    expect(requested).toEqual(['https://icons.duckduckgo.com/ip3/example.com.ico'])
+
+    // Remembered in this browser
+    expect(await page.evaluate(() => localStorage.getItem('siteIcons'))).toBe('true')
+
+    await page.locator('.sidebar-btn[aria-label="Hide website icons"]').click()
+    await expect(page.locator('.site-icon-img')).toHaveCount(0)
+  })
+
+  test('should open the website from the edit form', async ({ page }) => {
+    await addLogin(page, { name: 'Example', url: 'example.com' })
+    await page.locator('.grid-row:has-text("Example")').dblclick()
+    await expect(page.locator('.modal-panel [data-field="url"] a[aria-label="Open URL"]')).toHaveAttribute('href', 'https://example.com')
+  })
+})
+
 test.describe('Mobile', { tag: '@mobile' }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
@@ -1126,6 +1221,19 @@ test.describe('Mobile', { tag: '@mobile' }, () => {
     await wizard.locator('button:has-text("Import 1 entry")').click()
     await expect(page.locator('.entry-card:has-text("Bank")')).toContainText('Imported/Safari')
     await expectNoHorizontalScroll(page)
+  })
+
+  test('should open the security report from the More menu and open an entry', async ({ page }) => {
+    await addEntry(page, { name: 'Weak one', login: 'me', password: '123456' })
+    await page.locator('.bottom-nav [aria-label="More"]').click()
+    await page.locator('.menu-item:has-text("Security report")').click()
+    const report = page.locator('.modal-panel:has-text("Security report")')
+    await expect(report.locator('#report-weak')).toContainText('Weak one')
+    await expectNoHorizontalScroll(page)
+    await report.locator('.report-row:has-text("Weak one")').click()
+    // The details sheet opens on top of the report
+    await expect(page.locator('.modal-panel .details')).toBeVisible()
+    await expect(page.locator('.modal-panel:has(.details) .modal-title')).toHaveText('Weak one')
   })
 
   test('should show history and restore from the trash', async ({ page }) => {

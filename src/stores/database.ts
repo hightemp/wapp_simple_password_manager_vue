@@ -12,7 +12,7 @@ import { useReposStore } from './repos'
 import type { ImportedEntry } from '@/services/importers'
 import {
   DEFAULT_TYPE, entryType, typeById, customKey, newCustomId, toCustomKind,
-  CUSTOM_FIELD_KINDS, type CustomField, type CustomFieldKind,
+  CUSTOM_FIELD_KINDS, PASSWORD_CHANGED_KEY, type CustomField, type CustomFieldKind,
 } from '@/types/entryTypes'
 
 export const DATABASE_PATH = 'passwords-database'
@@ -25,6 +25,8 @@ export interface Entry {
   custom?: CustomField[]
   // Previous values of changed fields, oldest first
   history?: HistoryVersion[]
+  // When the password was set (ms); missing for entries saved before this was recorded
+  password_changed_at?: number
   [field: string]: any
 }
 
@@ -62,7 +64,7 @@ export const HISTORY_LIMIT = 20
 export const TRASH_DAYS = 30
 export const TRASH_RETENTION = TRASH_DAYS * 24 * 60 * 60 * 1000
 // Properties of an entry that are not field values
-const NON_FIELD_KEYS = new Set(['id', 'type', 'custom', 'history'])
+const NON_FIELD_KEYS = new Set(['id', 'type', 'custom', 'history', PASSWORD_CHANGED_KEY])
 // Field changes not recorded in the history (moving to another category)
 const UNRECORDED_FIELDS = new Set(['category'])
 
@@ -205,6 +207,9 @@ function normalizeEntry(entry: unknown, name: string): Entry {
     if (key === 'id') result.id = value
     else if (key === 'history') result.history = normalizeHistory(value)
     else if (key === 'custom') result.custom = normalizeCustom(value)
+    else if (key === PASSWORD_CHANGED_KEY) {
+      if (Number.isFinite(value)) result[key] = value
+    }
     else result[key] = value == null ? '' : String(value)
   }
   if ('category' in result) result.category = normalizePath(result.category)
@@ -262,10 +267,17 @@ export function changeEntry(entry: Entry, values: Record<string, string>, now = 
     entry[field] = value
     changed = true
   }
+  if ('password' in previous) setPasswordChanged(entry, now)
   if (Object.keys(previous).length) {
     entry.history = [...(entry.history ?? []), { at: now, fields: previous }].slice(-HISTORY_LIMIT)
   }
   return changed
+}
+
+/** Remember when the password was set (forgotten when it is cleared) */
+function setPasswordChanged(entry: Entry, now: number) {
+  if (entry.password) entry[PASSWORD_CHANGED_KEY] = now
+  else delete entry[PASSWORD_CHANGED_KEY]
 }
 
 /** Drop paths that are inside another path of the list */
@@ -417,6 +429,7 @@ export const useDatabaseStore = defineStore('database', () => {
       Object.assign(item, Object.fromEntries(Object.entries(values).filter(([, value]) => value !== '')))
       item.type = type.id
       if (custom.length) item.custom = custom
+      setPasswordChanged(item, Date.now())
       item.id = ++table.value.last_index
       table.value.data.push(item)
       unsavedChanges.value++

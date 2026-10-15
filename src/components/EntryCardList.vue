@@ -21,7 +21,7 @@
     >
       <div class="entry-card-main">
         <div class="entry-card-title-row">
-          <div :class="[entryType(entry).icon, 'entry-card-type']" :title="entryType(entry).label" />
+          <SiteIcon :url="entryUrl(entry)" :fallback="entryType(entry).icon" :title="entryType(entry).label" class="entry-card-type" />
           <span class="entry-card-name">{{ entry.name || '(no name)' }}</span>
           <ExpiryBadge :entry="entry" />
           <span v-if="entry.category" class="entry-card-category">{{ entry.category }}</span>
@@ -39,6 +39,17 @@
         >
           <div :class="copiedCells.has(item.key + '-' + entry.id) ? 'i-lucide-check copied' : item.icon" />
         </button>
+        <a
+          v-if="!inTrash && openableUrl(entryUrl(entry))"
+          :href="openableUrl(entryUrl(entry))"
+          target="_blank"
+          rel="noopener"
+          class="entry-card-btn"
+          aria-label="Open website"
+          @click.stop
+        >
+          <div class="i-lucide-external-link" />
+        </a>
       </div>
     </div>
   </div>
@@ -46,8 +57,10 @@
 
 <script setup lang="ts">
 import type { Entry } from '@/stores/database'
-import { entryType, describeField, copyIcon } from '@/types/entryTypes'
+import { entryType, entryUrl, describeField, copyIcon } from '@/types/entryTypes'
+import { openableUrl } from '@/utils/url'
 import ExpiryBadge from './ExpiryBadge.vue'
+import SiteIcon from './SiteIcon.vue'
 
 defineProps<{
   entries: Entry[]

@@ -190,4 +190,17 @@ describe('mergeDatabases — types and custom fields', () => {
     theirs.table.data[0].type = 'secure_note'
     expect(mergeDatabases(base, clone(base), theirs).database.table.data[0].type).toBe('secure_note')
   })
+
+  it('should keep the later password date and not treat it as a conflicting field', () => {
+    const start = db([{ id: 1, name: 'Mail', login: 'me', password: 'p1', password_changed_at: 10 }])
+    const ours = clone(start)
+    ours.table.data[0].password_changed_at = 20
+    const theirs = clone(start)
+    theirs.table.data[0].login = 'other'
+    theirs.table.data[0].password_changed_at = 15
+    const { database, stats } = mergeDatabases(start, ours, theirs, 100)
+    expect(byId(database, 1).password_changed_at).toBe(20)
+    expect(stats.conflicts).toBe(0)
+    expect(byId(database, 1).history).toBeUndefined()
+  })
 })

@@ -27,11 +27,20 @@
       </button>
     </div>
 
+    <div class="sidebar-group">
+      <button class="sidebar-btn" title="Security report" aria-label="Security report" @click="emit('action', 'security-report')">
+        <div class="i-lucide-shield-check" />
+      </button>
+    </div>
+
     <div class="sidebar-spacer" />
 
     <div class="sidebar-group">
       <button class="sidebar-btn" title="Keyboard Shortcuts" aria-label="Keyboard Shortcuts" @click="emit('action', 'shortcuts')">
         <div class="i-lucide-keyboard" />
+      </button>
+      <button class="sidebar-btn" :title="siteIconsLabel" :aria-label="siteIconsLabel" :aria-pressed="siteIconsEnabled" @click="emit('action', 'toggle-site-icons')">
+        <div :class="siteIconsEnabled ? 'i-lucide-image' : 'i-lucide-image-off'" />
       </button>
       <button class="sidebar-btn" :title="themeLabel" :aria-label="themeLabel" @click="emit('action', 'toggle-theme')">
         <div :class="isDarkTheme ? 'i-lucide-sun' : 'i-lucide-moon'" />
@@ -43,6 +52,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { MenuAction } from '@/types/menu'
+import { useSiteIcons } from '@/composables/useSiteIcons'
 
 const props = defineProps<{
   unsavedChanges: number
@@ -62,6 +72,9 @@ const TOP_ITEMS: { id: MenuAction; title: string; icon: string }[] = [
 ]
 
 const themeLabel = computed(() => props.isDarkTheme ? 'Light theme' : 'Dark theme')
+
+const { siteIconsEnabled } = useSiteIcons()
+const siteIconsLabel = computed(() => siteIconsEnabled.value ? 'Hide website icons' : 'Show website icons')
 </script>
 
 <style scoped>

@@ -11,5 +11,7 @@ export type MenuAction =
   | 'import-other'
   | 'shortcuts'
   | 'toggle-theme'
+  | 'toggle-site-icons'
+  | 'security-report'
   | 'lock'
   | 'more'

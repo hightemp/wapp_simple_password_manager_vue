@@ -32,7 +32,7 @@
           <button class="ctx-item" @click="emit('history')">
             <div class="i-lucide-history" /> History
           </button>
-          <button class="ctx-item" v-if="entryUrl(entry)" @click="openUrl(entryUrl(entry))">
+          <button class="ctx-item" v-if="openableUrl(entryUrl(entry))" @click="openUrl(entryUrl(entry))">
             <div class="i-lucide-external-link" /> Open URL
           </button>
           <div class="ctx-sep" />
@@ -48,6 +48,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, useTemplateRef } from 'vue'
 import { entryType, entryUrl, describeField, copyIcon } from '@/types/entryTypes'
+import { openableUrl } from '@/utils/url'
 
 const props = defineProps<{
   // Menu is shown while an entry is set
@@ -101,7 +102,7 @@ watch(() => [props.entry, props.x, props.y], async () => {
 }, { immediate: true })
 
 function openUrl(url: string) {
-  window.open(url, '_blank', 'noopener')
+  window.open(openableUrl(url), '_blank', 'noopener')
 }
 </script>
 

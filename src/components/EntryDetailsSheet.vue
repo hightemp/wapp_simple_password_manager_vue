@@ -7,7 +7,7 @@
   >
     <dl v-if="entry" class="details">
       <div class="details-type">
-        <div :class="type.icon" /> {{ type.label }}
+        <SiteIcon :url="entryUrl(entry)" :fallback="type.icon" /> {{ type.label }}
         <span v-if="expiry" :class="['details-expiry', `details-expiry--${expiry.status}`]">
           <ExpiryBadge :entry="entry" /> {{ expiry.text }}
         </span>
@@ -54,7 +54,7 @@
             </template>
             <span v-else :class="['details-text', { 'details-multiline': field.kind === 'multiline' }]">{{ display(field) }}</span>
 
-            <a v-if="field.kind === 'url'" :href="entry[field.key]" target="_blank" rel="noopener" class="details-btn" aria-label="Open URL">
+            <a v-if="field.kind === 'url'" :href="href(field)" target="_blank" rel="noopener" class="details-btn" aria-label="Open URL">
               <div class="i-lucide-external-link" />
             </a>
             <button v-else class="details-btn" :aria-label="`Copy ${field.label.toLowerCase()}`" @click="emit('copy', field.key)">
@@ -92,10 +92,12 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 import type { Entry } from '@/stores/database'
-import { entryType, entryFields, isSecretKind, formatDate, expiryDate, expiryStatus, type FieldDef } from '@/types/entryTypes'
+import { entryType, entryUrl, entryFields, isSecretKind, formatDate, expiryDate, expiryStatus, type FieldDef } from '@/types/entryTypes'
 import { formatCardNumber } from '@/utils/card'
+import { openableUrl } from '@/utils/url'
 import RecoveryCodes from './RecoveryCodes.vue'
 import ExpiryBadge from './ExpiryBadge.vue'
+import SiteIcon from './SiteIcon.vue'
 import BaseModal from './BaseModal.vue'
 
 const props = defineProps<{
@@ -152,7 +154,7 @@ function href(field: FieldDef): string {
   const value = props.entry?.[field.key] ?? ''
   if (field.kind === 'email') return `mailto:${value}`
   if (field.kind === 'phone') return `tel:${value.replace(/[^\d+]/g, '')}`
-  return value
+  return openableUrl(value)
 }
 </script>
 

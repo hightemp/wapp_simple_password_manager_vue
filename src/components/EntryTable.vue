@@ -84,7 +84,7 @@
             <!-- Name with the type icon -->
             <div class="grid-cell" role="gridcell">
               <div class="cell-name">
-                <div :class="[entryType(row).icon, 'cell-type-icon']" :title="entryType(row).label" />
+                <SiteIcon :url="entryUrl(row)" :fallback="entryType(row).icon" :title="entryType(row).label" class="cell-type-icon" />
                 <span class="cell-text">{{ row.name }}</span>
                 <ExpiryBadge :entry="row" />
               </div>
@@ -121,7 +121,7 @@
             <div class="grid-cell" role="gridcell">
               <div v-if="entryUrl(row)" class="cell-url">
                 <div class="i-lucide-external-link cell-icon" />
-                <a :href="entryUrl(row)" target="_blank" rel="noopener" class="url-link">{{ entryUrl(row) }}</a>
+                <a :href="openableUrl(entryUrl(row))" target="_blank" rel="noopener" class="url-link">{{ entryUrl(row) }}</a>
               </div>
             </div>
             <!-- Notes -->
@@ -145,7 +145,9 @@ import { debounce } from '@/utils/debounce'
 import { ENTRIES_DRAG_TYPE } from '@/utils/categories'
 import { formatCardNumber } from '@/utils/card'
 import { entryType, mainSecret, entryUrl, describeField } from '@/types/entryTypes'
+import { openableUrl } from '@/utils/url'
 import ExpiryBadge from './ExpiryBadge.vue'
+import SiteIcon from './SiteIcon.vue'
 
 defineProps<{
   // Keys like "password-12" of buttons that were just used, to show a check mark

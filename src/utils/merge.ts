@@ -1,5 +1,5 @@
 import { HISTORY_LIMIT, type Database, type Entry, type HistoryVersion, type TrashItem } from '@/stores/database'
-import type { CustomField } from '@/types/entryTypes'
+import { PASSWORD_CHANGED_KEY, type CustomField } from '@/types/entryTypes'
 
 export interface MergeStats {
   // Entries taken from the other side (new there, or restored there)
@@ -49,12 +49,15 @@ function locate(database: Database | null): Map<number, Located> {
   return map
 }
 
-/** Field names of an entry (without id and history) */
+// Properties merged separately from the field values
+const NOT_FIELDS = new Set(['id', 'history', 'custom', PASSWORD_CHANGED_KEY])
+
+/** Field names of an entry (without id, history, …) */
 function fieldNames(...entries: (Entry | undefined)[]): string[] {
   const names = new Set<string>()
   for (const entry of entries) {
     for (const key of Object.keys(entry ?? {})) {
-      if (key !== 'id' && key !== 'history' && key !== 'custom') names.add(key)
+      if (!NOT_FIELDS.has(key)) names.add(key)
     }
   }
   return [...names]
@@ -248,5 +251,8 @@ function mergeEntry(mine: Located, other: Located, original: Located | undefined
 
   const custom = mergeCustom(original?.entry.custom, mine.entry.custom, other.entry.custom)
   if (custom.length) entry.custom = custom
+  // The password was set at the later of the two times (none if it is empty now)
+  const changedAt = Math.max(mine.entry[PASSWORD_CHANGED_KEY] ?? 0, other.entry[PASSWORD_CHANGED_KEY] ?? 0)
+  if (changedAt && entry.password) entry[PASSWORD_CHANGED_KEY] = changedAt
   return { entry: withHistory(entry, history), place, deletedAt }
 }

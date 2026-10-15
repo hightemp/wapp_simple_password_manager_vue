@@ -54,7 +54,7 @@
 
     <!-- single-line inputs -->
     <template v-else>
-      <div :class="['form-field-control', { 'form-field-control--secret': isSecret }]">
+      <div :class="['form-field-control', { 'form-field-control--secret': isSecret, 'form-field-control--link': field.kind === 'url' }]">
         <input
           :id="inputId"
           :type="inputType"
@@ -77,6 +77,17 @@
           >
             <div :class="isRevealed ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
           </button>
+          <a
+            v-if="field.kind === 'url' && openableUrl(model)"
+            :href="openableUrl(model)"
+            target="_blank"
+            rel="noopener"
+            class="form-field-btn"
+            :aria-label="`Open ${field.label}`"
+            title="Open"
+          >
+            <div class="i-lucide-external-link" />
+          </a>
           <button type="button" class="form-field-btn" :disabled="!model" :aria-label="`Copy ${field.label}`" :title="`Copy ${field.label}`" @click="copy">
             <div :class="isCopied ? 'i-lucide-check' : 'i-lucide-copy'" />
           </button>
@@ -94,6 +105,7 @@ import { useNotify } from '@/composables/useNotify'
 import { cardBrand, digitsOnly, formatCardNumber, formatExpiry, isValidCardNumber } from '@/utils/card'
 import type { FieldKind } from '@/types/entryTypes'
 import { countUnused } from '@/utils/recoveryCodes'
+import { openableUrl } from '@/utils/url'
 import CategoryInput from './CategoryInput.vue'
 import RecoveryCodes from './RecoveryCodes.vue'
 
@@ -189,6 +201,11 @@ onBeforeUnmount(() => clearTimeout(copiedTimer))
 .form-field-control--secret .form-field-input {
   padding-right: 72px;
   font-family: var(--font-mono);
+}
+
+/* Room for the open and copy buttons */
+.form-field-control--link .form-field-input {
+  padding-right: 72px;
 }
 
 .form-field-actions {

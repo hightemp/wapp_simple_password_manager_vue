@@ -65,6 +65,8 @@
       @action="onMenuAction"
     />
     <MobileMenuSheet v-model="showMobileMenu" :is-dark-theme="isDarkTheme" @action="onMenuAction" />
+    <!-- Before the details sheet so an entry opened from it shows on top -->
+    <SecurityReportModal v-model="showSecurityReport" @open="openFromReport" />
     <EntryDetailsSheet
       :entry="detailsEntry"
       :in-trash="isTrashView"
@@ -126,6 +128,7 @@ import { useSaveActions } from '@/composables/useSaveActions'
 import { useHotkeys } from '@/composables/useHotkeys'
 import { useAutoLock } from '@/composables/useAutoLock'
 import { useTheme } from '@/composables/useTheme'
+import { useSiteIcons } from '@/composables/useSiteIcons'
 import type { MenuAction } from '@/types/menu'
 import { describeField, expiryStatus, DEFAULT_TYPE, EXPIRING_FILTER, EXPIRY_WARNING_DAYS } from '@/types/entryTypes'
 
@@ -145,6 +148,7 @@ import ImportWizardModal from '@/components/ImportWizardModal.vue'
 import EntryHistoryModal from '@/components/EntryHistoryModal.vue'
 import QrCodeModal from '@/components/QrCodeModal.vue'
 import EntryContextMenu from '@/components/EntryContextMenu.vue'
+import SecurityReportModal from '@/components/SecurityReportModal.vue'
 import RepoSettingsModal from '@/components/RepoSettingsModal.vue'
 import CreateDatabaseModal from '@/components/CreateDatabaseModal.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
@@ -176,6 +180,7 @@ const {
 } = useEntryActions(notify, confirmAction)
 const { justSaved, saveAll, importDatabase } = useSaveActions(notify, confirmAction, afterMerge)
 const { isDarkTheme, toggleTheme } = useTheme()
+const { siteIconsEnabled, toggleSiteIcons } = useSiteIcons()
 
 // --- local state ---
 const showShortcuts = ref(false)
@@ -183,6 +188,7 @@ const showChangePassword = ref(false)
 const showMobileMenu = ref(false)
 const showTypePicker = ref(false)
 const showImportWizard = ref(false)
+const showSecurityReport = ref(false)
 // Entry shown in the mobile details sheet
 const detailsEntry = ref<Entry | null>(null)
 // Entry whose history is shown
@@ -318,6 +324,30 @@ function openChangePassword() {
   showChangePassword.value = true
 }
 
+function openSecurityReport() {
+  if (!db.masterPassword) {
+    notify('Not connected', 'Connect to a repository first', 'error')
+    return
+  }
+  showSecurityReport.value = true
+}
+
+/** Open an entry from the security report to fix it (the report stays open underneath) */
+function openFromReport(entry: Entry) {
+  if (isMobile.value) detailsEntry.value = entry
+  else db.openEditWindow(entry)
+}
+
+function onToggleSiteIcons() {
+  toggleSiteIcons()
+  notify(
+    siteIconsEnabled.value ? 'Website icons on' : 'Website icons off',
+    siteIconsEnabled.value ? 'Icons are loaded from DuckDuckGo, which sees the website addresses (not your logins or passwords)' : undefined,
+    'info',
+    siteIconsEnabled.value ? 6000 : 2000,
+  )
+}
+
 function onMenuAction(action: MenuAction) {
   switch (action) {
     case 'repo-window': db.isRepoWindowOpen = true; break
@@ -331,6 +361,8 @@ function onMenuAction(action: MenuAction) {
     case 'import-other': openImportWizard(); break
     case 'shortcuts': showShortcuts.value = true; break
     case 'toggle-theme': toggleTheme(); break
+    case 'toggle-site-icons': onToggleSiteIcons(); break
+    case 'security-report': openSecurityReport(); break
     case 'more': showMobileMenu.value = true; break
     case 'lock': lockApp(); break
   }
@@ -347,6 +379,7 @@ async function lockApp() {
   qrCode.value = null
   showTypePicker.value = false
   showImportWizard.value = false
+  showSecurityReport.value = false
   categoryPicker.value = null
   searchQuery.value = ''
   try {

@@ -779,4 +779,50 @@ describe('Database Store (Pinia)', () => {
       expect(database.table.data[0].custom).toEqual([{ id: 'x', label: 'Word', kind: 'secret' }, { id: 'y', label: '', kind: 'text' }])
     })
   })
+
+  describe('password date', () => {
+    it('should record when the password is set, changed and cleared', () => {
+      db.openEditWindow({})
+      db.setFormField('name', 'Mail')
+      db.setFormField('password', 'one')
+      db.saveEditWindow()
+      const entry = db.table.data[0]
+      expect(entry.password_changed_at).toBeGreaterThan(0)
+
+      changeEntry(entry, { password: 'two' }, 500)
+      expect(entry.password_changed_at).toBe(500)
+      // The date is not a field: it is not recorded in the history
+      expect(entry.history.at(-1).fields).toEqual({ password: 'one' })
+
+      changeEntry(entry, { login: 'me' }, 900)
+      expect(entry.password_changed_at).toBe(500)
+
+      changeEntry(entry, { password: '' }, 1000)
+      expect(entry.password_changed_at).toBeUndefined()
+    })
+
+    it('should not set a date for entries without a password', () => {
+      db.openEditWindow({})
+      db.setFormField('name', 'Note')
+      db.saveEditWindow()
+      expect(db.table.data[0].password_changed_at).toBeUndefined()
+    })
+
+    it('should keep the date when editing other fields in the form', () => {
+      db.setDatabase(normalizeDatabase({ table: { data: [{ id: 1, name: 'A', password: 'p', password_changed_at: 42 }] } }))
+      db.openEditWindow(db.table.data[0])
+      db.setFormField('login', 'new')
+      db.saveEditWindow()
+      expect(db.table.data[0].password_changed_at).toBe(42)
+    })
+
+    it('should keep a numeric date when loading and drop a broken one', () => {
+      const database = normalizeDatabase({ table: { data: [
+        { id: 1, password: 'a', password_changed_at: 42 },
+        { id: 2, password: 'b', password_changed_at: 'soon' },
+      ] } })
+      expect(database.table.data[0].password_changed_at).toBe(42)
+      expect('password_changed_at' in database.table.data[1]).toBe(false)
+    })
+  })
 })

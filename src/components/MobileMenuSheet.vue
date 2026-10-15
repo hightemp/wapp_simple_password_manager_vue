@@ -12,18 +12,27 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { MenuAction } from '@/types/menu'
+import { useSiteIcons } from '@/composables/useSiteIcons'
 import BaseModal from './BaseModal.vue'
 
 const props = defineProps<{ isDarkTheme: boolean }>()
 const emit = defineEmits<{ (e: 'action', action: MenuAction): void }>()
 const isOpen = defineModel<boolean>({ required: true })
 
+const { siteIconsEnabled } = useSiteIcons()
+
 const items = computed<{ action: MenuAction; label: string; icon: string }[]>(() => [
   { action: 'export', label: 'Export database', icon: 'i-lucide-download' },
   { action: 'import', label: 'Import database', icon: 'i-lucide-upload' },
   { action: 'import-other', label: 'Import from another app', icon: 'i-lucide-file-input' },
+  { action: 'security-report', label: 'Security report', icon: 'i-lucide-shield-check' },
   { action: 'change-password', label: 'Change master password', icon: 'i-lucide-key-round' },
   { action: 'toggle-theme', label: props.isDarkTheme ? 'Light theme' : 'Dark theme', icon: props.isDarkTheme ? 'i-lucide-sun' : 'i-lucide-moon' },
+  {
+    action: 'toggle-site-icons',
+    label: siteIconsEnabled.value ? 'Hide website icons' : 'Show website icons',
+    icon: siteIconsEnabled.value ? 'i-lucide-image-off' : 'i-lucide-image',
+  },
   { action: 'lock', label: 'Lock', icon: 'i-lucide-lock' },
 ])
 
